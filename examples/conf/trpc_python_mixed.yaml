@@ -1,0 +1,74 @@
+global:                                           # 全局配置
+  namespace: Development                          # 环境类型，分正式 production 和非正式 development 两种类型
+  env_name: test                                  # 环境名称，非正式环境下多环境的名称
+  container_name:                                 # 容器名
+  local_ip:                                       # 宿主机 IP
+
+# 混合协议示例：同一个进程里同时跑两种协议的 service
+#   - Greeter1：protocol: http_mcp  -> MCP 服务（走 trpc-mcp 的 FastMCP/SSE 传输）
+#   - Greeter2：protocol: http      -> 普通 trpc HTTP 服务（走 aiohttp，@routes.route 处理）
+# 用来验证 http_mcp 的专用 codec 是被隔离的，不会影响普通 http 服务。
+server:                                           # 服务端配置
+  app: test                                       # 业务的应用名
+  server: mcp                                     # 进程服务名
+  bin_path: /usr/local/trpc/bin/
+  conf_path: /usr/local/trpc/conf/
+  data_path: /usr/local/trpc/data/
+  worker_num: 1
+  filter:
+    - default
+  service:
+    - name: trpc.test.mcp.Greeter1               # MCP 服务
+      ip: 127.0.0.1
+      port: 8008
+      network: tcp
+      protocol: http_mcp                         # 应用层协议：MCP
+      timeout: 1000000
+    - name: trpc.test.mcp.Greeter2               # 普通 HTTP 服务
+      ip: 127.0.0.1
+      port: 8009
+      network: tcp
+      protocol: http                             # 应用层协议：普通 http
+      timeout: 1000000
+
+client:                                           # 客户端调用的后端配置
+  timeout: 1000000
+  namespace: Development
+  filter:
+    - default
+  service:
+    - name: trpc.test.mcp.Greeter1               # MCP 后端，McpProxy 调用
+      target: ip://127.0.0.1:8008
+      network: tcp
+      timeout: 1000000
+      protocol: http_mcp
+    - name: trpc.test.mcp.Greeter2               # 普通 HTTP 后端，trpc http Client 调用
+      target: ip://127.0.0.1:8009
+      network: tcp
+      timeout: 1000000
+      protocol: http
+
+plugins:                                         # 插件配置
+  log:
+    default:
+      - writer: console
+        level: debug
+      - writer: file
+        level: info
+        formatter: json
+        writer_config:
+          filename: ./trpc.log
+          max_size: 10
+          max_backups: 10
+          max_age: 7
+          compress: false
+  mcp:
+    client:                                      # 仅对 http_mcp 的 McpProxy 生效
+      transport: sse
+      base_url: /test
+    server:                                      # 仅对 http_mcp 的 Greeter1 生效
+      instructions: test1
+      transport: sse
+      base_url: /test
+      settings:
+        message_path: /messages/

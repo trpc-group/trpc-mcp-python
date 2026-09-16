@@ -1,0 +1,13 @@
+# proxy pypi
+--index-url https://mirrors.cloud.tencent.com/pypi/simple/
+# private pypi
+--extra-index-url
+
+pytest-mock
+pytest-asyncio
+pyparsing==2.2.0
+pytest>=6.1.0
+pytest-cov
+# XML test reporter is installed by build.sh, which picks xmlrunner or its
+# maintained fork unittest-xml-reporting depending on the Python version
+# (xmlrunner does not support Python 3.12+).

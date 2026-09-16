@@ -1,0 +1,20 @@
+# proxy pypi
+--index-url https://mirrors.cloud.tencent.com/pypi/simple/
+# private pypi
+--extra-index-url
+
+--trusted-host mirrors.cloud.tencent.com mirrors.cloud.tencent.com
+
+wheel
+setuptools
+pydantic>=2.11.3
+# v1.x line only; v2 (main branch) reworks the transport layer and breaks the
+# FastMCP internals this package relies on. Verified against 1.11.0 .. 1.27.2.
+# Floor is 1.11.0: it ships the StreamableHTTP session-manager crash isolation
+# (PR #841) we rely on instead of hand-patching it. See docs/troubleshooting.md.
+mcp>=1.11.0,<2
+
+trpc>=0.9.6
+trpc_naming_polaris>=0.6.0
+
+#git+#egg=trpc_mcp
