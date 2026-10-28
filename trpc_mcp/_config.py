@@ -1,6 +1,8 @@
-# -*- coding: utf-8 -*-
+# Tencent is pleased to support the open source community by making tRPC-MCP-Python available.
 #
-# Copyright @ 2025 Tencent.com
+# Copyright (C) 2026 Tencent. All rights reserved.
+#
+# tRPC-MCP-Python is licensed under Apache-2.0.
 """
 TRPC MCP Configuration Module
 
@@ -19,7 +21,8 @@ from mcp.server.auth.provider import TokenVerifier
 from mcp.server.streamable_http import EventStore
 from mcp.server.fastmcp.tools import Tool
 
-from trpc.config import config as trpc_config
+from trpc_sdk.config import TrpcConfig
+from trpc_sdk.config import TrpcConfigParser
 
 from ._constants import MCP_NAME
 from ._constants import STATELESS_HTTP
@@ -117,9 +120,9 @@ def load_mcp_config() -> McpConfig:
     Returns:
         McpConfig: Initialized MCP configuration with default values for missing settings.
     """
-    conf_dict: dict = trpc_config.global_plugins_config.get(MCP_NAME, {})
+    conf_dict: dict = (TrpcConfig.plugins_config() or {}).get(MCP_NAME) or {}
     mcp_config = McpConfig()
-    trpc_config.TRPCConfig.unmarshal_spec(conf_dict, mcp_config)
+    TrpcConfigParser.populate_from_dict(conf_dict, mcp_config)
     mcp_config.server = mcp_config.server or McpServerConfig()
     mcp_config.client = mcp_config.client or McpClientConfig()
     if STATELESS_HTTP not in mcp_config.server.settings:

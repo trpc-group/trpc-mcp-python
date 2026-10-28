@@ -1,12 +1,19 @@
-# -*- coding: utf-8 -*-
-"""Logging bridge for routing MCP stack logs through TRPC logging."""
+# Tencent is pleased to support the open source community by making tRPC-MCP-Python available.
+#
+# Copyright (C) 2026 Tencent. All rights reserved.
+#
+# tRPC-MCP-Python is licensed under Apache-2.0.
+"""Logging bridge for routing MCP stack logs through TRPC logging.
+
+trpc_sdk captures stdlib ``logging`` with an ``InterceptHandler`` on the root
+logger when a log output sets ``capture_third_party: true`` (or
+``TRPC_LOG_INTERCEPT`` is set). This module only makes the MCP stack loggers
+reach that root handler, with their package name prefixed to each message.
+"""
 
 import logging
 
-from trpc.log import logger as trpc_logger
-
 _LOGGER_NAMES = (
-    "",
     "mcp",
     "mcp.server",
     "mcp.server.fastmcp",
@@ -29,13 +36,7 @@ class _PackagePrefixFilter(logging.Filter):
 
     @staticmethod
     def _is_trpc_record(logger_name: str) -> bool:
-        if logger_name.startswith(("trpc", "trpc_mcp")):
-            return True
-        for logger_instance in getattr(trpc_logger, "GlobalLogger", {}).values():
-            filename = getattr(logger_instance, "filename", None)
-            if filename and logger_name == filename:
-                return True
-        return False
+        return logger_name.startswith("trpc")
 
     def filter(self, record: logging.LogRecord) -> bool:
         logger_name = record.name
@@ -56,44 +57,34 @@ class _PackagePrefixFilter(logging.Filter):
         return True
 
 
-def _trpc_python_handlers() -> list[logging.Handler]:
-    """Return handlers configured by the TRPC default logger."""
-    default_logger = getattr(trpc_logger, "DefaultLogger", None)
-    python_logger = getattr(default_logger, "logger", None)
-    handlers = list(getattr(python_logger, "handlers", []) or [])
-    return handlers
-
-
-def _install_handlers(target: logging.Logger, handlers: list[logging.Handler], level: int) -> None:
-    target.handlers = list(handlers)
-    target.setLevel(level)
-    target.propagate = False
-    if not any(getattr(item, _PREFIX_FILTER_MARKER, False) for item in target.filters):
-        prefix_filter = _PackagePrefixFilter()
-        setattr(prefix_filter, _PREFIX_FILTER_MARKER, True)
-        target.addFilter(prefix_filter)
+def _install_prefix_filter(target: logging.Filterer) -> None:
+    if any(getattr(item, _PREFIX_FILTER_MARKER, False) for item in target.filters):
+        return
+    prefix_filter = _PackagePrefixFilter()
+    setattr(prefix_filter, _PREFIX_FILTER_MARKER, True)
+    target.addFilter(prefix_filter)
 
 
 def _install_handler_filters(handlers: list[logging.Handler]) -> None:
     for handler in handlers:
-        if any(getattr(item, _PREFIX_FILTER_MARKER, False) for item in handler.filters):
-            continue
-        prefix_filter = _PackagePrefixFilter()
-        setattr(prefix_filter, _PREFIX_FILTER_MARKER, True)
-        handler.addFilter(prefix_filter)
+        _install_prefix_filter(handler)
 
 
 def bridge_third_party_loggers(level: int | None = None) -> None:
-    """Route MCP/uvicorn/Redis Python logging into TRPC's logging handlers."""
-    handlers = _trpc_python_handlers()
-    if not handlers:
-        return
-    _install_handler_filters(handlers)
+    """Route MCP/uvicorn/Redis Python logging into TRPC's logging.
 
-    log_level = level
-    if log_level is None:
-        default_logger = getattr(trpc_logger, "DefaultLogger", None)
-        log_level = getattr(default_logger, "min_level", logging.INFO)
+    Each MCP stack logger propagates to the root logger, where trpc_sdk's
+    third-party capture picks it up, and gets the package prefix filter.
+    Whether the records end up in a TRPC log output is decided by that
+    output's ``capture_third_party`` setting.
 
+    Args:
+        level: Level to set on the MCP stack loggers; ``None`` leaves them
+            inheriting the root level set by trpc_sdk.
+    """
     for name in _LOGGER_NAMES:
-        _install_handlers(logging.getLogger(name), handlers, log_level)
+        target = logging.getLogger(name)
+        target.propagate = True
+        if level is not None:
+            target.setLevel(level)
+        _install_prefix_filter(target)

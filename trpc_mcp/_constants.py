@@ -1,6 +1,8 @@
-# -*- coding: utf-8 -*-
+# Tencent is pleased to support the open source community by making tRPC-MCP-Python available.
 #
-# Copyright @ 2025 Tencent.com
+# Copyright (C) 2026 Tencent. All rights reserved.
+#
+# tRPC-MCP-Python is licensed under Apache-2.0.
 """Constants for TRPC MCP Plugin.
 
 This module defines all constants used by the TRPC MCP plugin.
@@ -27,6 +29,7 @@ HTTP_NAME = "http"
 # Context and naming constants
 TRPC_CTX = "ctx"  # Key for TRPC context in message dictionary
 TRPC_MCP_PROCESS_NAME = "__TRPC_MCP_PROCESS_NAME"  # Process name identifier for MCP
+TRPC_MCP_PROCESS_VAR = "trpc_mcp_process"  # Process var holding the per-process McpProcess
 TRPC_MCP_SERVER_NAME = "TrpcFastMCP"  # Server name for MCP
 
 MCP_NAME = "mcp"  # Identifier for MCP plugin in TRPC system
@@ -36,12 +39,11 @@ MCP_SSE = "sse"  # Identifier for Server-Sent Events communication
 MCP_STREAMABLE_HTTP = "streamable-http"  # Identifier for streamable HTTP communication
 
 STATELESS_HTTP = "stateless_http"  # Identifier for stateless HTTP communication
-POLARIS = "polaris"  # Identifier for Polaris service discovery
-TARGET = "target"  # Key for target service address in Polaris
+TARGET = "target"  # Key for the selector target address in redis config
 
-HOST = "host"  # Key for host address in Polaris
-PORT = "port"  # Key for port number in Polaris
-OPTIONS = "options"  # Key for additional options in Polaris
+HOST = "host"  # Key for host address in redis config
+PORT = "port"  # Key for port number in redis config
+OPTIONS = "options"  # Key for selector options in redis config
 GET_METHOD: Final[str] = "GET"
 CONTENT_TYPE: str = "Content-Type"
 CONTENT_ENCODING: Final[str] = "Content-Encoding"

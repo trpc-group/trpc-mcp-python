@@ -1,7 +1,9 @@
-# -*- coding: utf-8 -*-
+# Tencent is pleased to support the open source community by making tRPC-MCP-Python available.
 #
-# Copyright @ 2025 Tencent.com
-from trpc.context import TrpcContext
+# Copyright (C) 2026 Tencent. All rights reserved.
+#
+# tRPC-MCP-Python is licensed under Apache-2.0.
+from trpc_sdk.abc import TrpcContext
 from trpc_mcp.tools import ToolFilterParams
 from trpc_mcp.tools import register_tool_filter
 from trpc_mcp.tools import ToolFilterBase

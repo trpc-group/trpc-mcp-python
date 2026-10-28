@@ -1,9 +1,13 @@
-# -*- coding: utf-8 -*-
+# Tencent is pleased to support the open source community by making tRPC-MCP-Python available.
+#
+# Copyright (C) 2026 Tencent. All rights reserved.
+#
+# tRPC-MCP-Python is licensed under Apache-2.0.
 """Tests for trpc_mcp._config."""
 
 import pytest
 from mcp.server.fastmcp.server import Settings
-from trpc.config import config as trpc_config
+from trpc_sdk.config import TrpcConfig
 
 from trpc_mcp import _config
 from trpc_mcp._config import (
@@ -29,11 +33,10 @@ from trpc_mcp._constants import (
 
 
 @pytest.fixture
-def clean_plugins_config():
-    saved = trpc_config.global_plugins_config
-    trpc_config.global_plugins_config = {}
-    yield trpc_config.global_plugins_config
-    trpc_config.global_plugins_config = saved
+def clean_plugins_config(monkeypatch):
+    plugins = {}
+    monkeypatch.setattr(TrpcConfig, "_plugins_config", plugins)
+    return plugins
 
 
 class TestDataclasses:
@@ -83,6 +86,33 @@ class TestLoadMcpConfig:
         assert cfg.server.settings[STATELESS_HTTP] is False
         assert cfg.server.settings[SSE_PATH_CONF] == "/api/sse"
         assert cfg.client.host == "h"
+
+    def test_nested_server_and_client_populated(self, clean_plugins_config):
+        clean_plugins_config["mcp"] = {
+            "server": {
+                "transport": "streamable-http",
+                "instructions": "hi",
+                "redis": {
+                    "host": "127.0.0.1",
+                    "port": 6379
+                },
+            },
+            "client": {
+                "transport": "streamable-http",
+                "base_url": "/c"
+            },
+        }
+        cfg = load_mcp_config()
+        assert cfg.server.transport == "streamable-http"
+        assert cfg.server.instructions == "hi"
+        assert cfg.server.redis == {"host": "127.0.0.1", "port": 6379}
+        assert cfg.server.settings[STATELESS_HTTP] is True
+        assert cfg.client.transport == "streamable-http"
+        assert cfg.client.base_url == "/c"
+
+    def test_no_plugins_section(self, monkeypatch):
+        monkeypatch.setattr(TrpcConfig, "_plugins_config", None)
+        assert isinstance(load_mcp_config().server, McpServerConfig)
 
     def test_get_server_and_client_config(self, clean_plugins_config):
         assert isinstance(get_mcp_server_config(), McpServerConfig)

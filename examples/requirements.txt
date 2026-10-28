@@ -1,15 +1,8 @@
-# proxy pypi
---index-url https://mirrors.cloud.tencent.com/pypi/simple/
-# private pypi
---extra-index-url
-
---trusted-host mirrors.cloud.tencent.com mirrors.cloud.tencent.com
-
 wheel
 setuptools
 pydantic
 mcp
+redis
+uvicorn
 
-trpc>=0.9.6
-trpc_metrics_runtime==0.1.0
-trpc_naming_polaris
+trpc-python

@@ -1,9 +1,13 @@
-# -*- coding: utf-8 -*-
+# Tencent is pleased to support the open source community by making tRPC-MCP-Python available.
+#
+# Copyright (C) 2026 Tencent. All rights reserved.
+#
+# tRPC-MCP-Python is licensed under Apache-2.0.
 """Tests for TRPC context-aware FastMCP registration."""
 
 import inspect
 
-from trpc.context import TrpcContext
+from trpc_sdk.abc import TrpcContext
 
 from trpc_mcp._trpc_mcp_server import TrpcMcpServer
 

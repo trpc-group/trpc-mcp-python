@@ -1,10 +1,14 @@
-# -*- coding: utf-8 -*-
+# Tencent is pleased to support the open source community by making tRPC-MCP-Python available.
+#
+# Copyright (C) 2026 Tencent. All rights reserved.
+#
+# tRPC-MCP-Python is licensed under Apache-2.0.
 """Tests for trpc_mcp.mcp_client."""
 
 import types
 
 import pytest
-from trpc.context import TrpcContext
+from trpc_sdk.abc import TrpcContext
 
 from trpc_mcp import mcp_client
 from trpc_mcp._config import McpClientConfig
@@ -123,10 +127,10 @@ class TestResolveUrls:
         assert scheme == "http"
         assert display == "http://127.0.0.1:8080/sse"
 
-    def test_service_name_polaris(self):
+    def test_domain_without_scheme(self):
         proxy = McpProxy("svc")
         display, scheme, netloc = proxy._resolve_urls("my.service", "mcp")
-        assert scheme == "polaris"
+        assert scheme == "http"
         assert netloc == "my.service"
 
 

@@ -36,25 +36,25 @@ json_data=$(cat <<EOF
 }
 EOF
 )
-# list_allowed_directories 可以换成期望的方法
+# list_allowed_directories can be replaced with the method you want
 
 response=$(curl -sS -X POST \
     -H "Content-Type: application/json" \
     -d "$json_data" \
     "$url")
 
-# 处理响应（可选：用 jq 格式化输出）
+# Format the response when jq is available
 if command -v jq &> /dev/null; then
     echo "$response" | jq .
 else
     echo "$response"
 fi
 
-# 输出调试信息
+# Print debug info
 echo -e "\n请求已发送至: $url"
 
-# 获取 session_id, base_url可以不需要
+# Fetch session_id. base_url is optional.
 # curl -H "Accept: text/event-stream" http://${ip}:${port}${base_url}/sse
 
-# 发送请求
+# Send the request
 # ./send_req.sh ${ip}:${port} ${session_id}

@@ -1,6 +1,8 @@
-# -*- coding: utf-8 -*-
+# Tencent is pleased to support the open source community by making tRPC-MCP-Python available.
 #
-# Copyright @ 2025 Tencent.com
+# Copyright (C) 2026 Tencent. All rights reserved.
+#
+# tRPC-MCP-Python is licensed under Apache-2.0.
 """Standalone example: call MCP **tools** through trpc-mcp's ``McpProxy``.
 
 What this file demonstrates
@@ -49,17 +51,16 @@ import pathlib
 
 from mcp.types import CallToolResult
 
-from trpc.client.options import with_namespace
-from trpc.client.options import with_protocol
-from trpc.config import config as trpc_config
-from trpc.context import TrpcContext
-from trpc.plugin import plugin as trpc_plugin
+from trpc_sdk.client import Options
+from trpc_sdk.config import TrpcConfig
+from trpc_sdk.abc import TrpcContext
+from trpc_sdk.plugin import init_plugins
 
 import trpc_mcp
 from trpc_mcp import set_http_header_to_context
 
 # Importing the filters package registers the client filter and the custom "test"
-# selector referenced by the example configs. Must happen before trpc_plugin.setup().
+# selector referenced by the example configs. Must happen before init_plugins().
 import filters as _
 
 DEFAULT_CONF: str = str(pathlib.Path(__file__).parent.parent / "trpc_python.yaml")
@@ -91,7 +92,7 @@ async def run(service_name: str) -> None:
     # options here only set the protocol (http_mcp) and namespace explicitly.
     proxy = trpc_mcp.McpProxy(
         name=service_name,
-        options=[with_protocol("http_mcp"), with_namespace("Development")],
+        options=[Options().set_protocol("http_mcp").set_namespace("Development")],
     )
     try:
         await proxy.initialize(new_ctx())
@@ -122,9 +123,9 @@ async def main() -> None:
     parser.add_argument("--service", default=DEFAULT_SERVICE, help="client.service name to call.")
     args = parser.parse_args()
 
-    # trpc-python style: load the global config, then set up plugins.
-    trpc_config.load_global_config(args.conf, "utf-8")
-    trpc_plugin.setup()
+    # trpc_sdk style: load the global config, then initialize plugins.
+    TrpcConfig.load(args.conf)
+    init_plugins()
     await run(args.service)
 
 

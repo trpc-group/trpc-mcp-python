@@ -1,15 +1,21 @@
-# -*- coding: utf-8 -*-
+# Tencent is pleased to support the open source community by making tRPC-MCP-Python available.
+#
+# Copyright (C) 2026 Tencent. All rights reserved.
+#
+# tRPC-MCP-Python is licensed under Apache-2.0.
 """Tests for trpc_mcp.utils."""
 
-import multiprocessing
 import socket
+import types
 import warnings
 
 import pytest
-from trpc.context import TrpcContext
-from trpc.http import defines as http_defines
+from trpc_sdk.abc import TrpcContext
+from trpc_sdk.common import set_current_process_var
+from trpc_sdk.http import HTTP_ARGS_META_KEY
 
 from trpc_mcp import utils
+from trpc_mcp._constants import TRPC_MCP_PROCESS_VAR
 
 
 class TestNormalizePath:
@@ -30,21 +36,6 @@ class TestNormalizePath:
         assert utils.normalize_path("/github", "/messages/") == "/github/messages/"
 
 
-class TestIsValidPattern:
-
-    def test_valid_ip_port(self):
-        assert utils._is_valid_pattern("127.0.0.1:8080") is True
-
-    def test_invalid_ip(self):
-        assert utils._is_valid_pattern("999.0.0.1:8080") is False
-
-    def test_not_ip_port(self):
-        assert utils._is_valid_pattern("example.com") is False
-
-    def test_port_out_of_range(self):
-        assert utils._is_valid_pattern("127.0.0.1:70000") is False
-
-
 class TestMakeUrl:
 
     def test_host_with_scheme_returned_as_is(self):
@@ -56,8 +47,8 @@ class TestMakeUrl:
     def test_ip_host_builds_http(self):
         assert utils.make_url("127.0.0.1:8080", "", "sse") == "http://127.0.0.1:8080/sse"
 
-    def test_service_name_builds_polaris(self):
-        assert utils.make_url("my.service", "", "sse") == "polaris://my.service/sse"
+    def test_domain_builds_http(self):
+        assert utils.make_url("my.service", "", "sse") == "http://my.service/sse"
 
 
 class TestHttpContextHelpers:
@@ -74,7 +65,7 @@ class TestHttpContextHelpers:
         ctx = TrpcContext()
         utils.set_http_kwargs_to_context(ctx, {"q": "1"})
         assert utils.get_http_kwargs_from_context(ctx) == {"q": "1"}
-        assert ctx.meta_data[http_defines.HTTP_ARGS_META_KEY] == {"q": "1"}
+        assert ctx.meta_data[HTTP_ARGS_META_KEY] == {"q": "1"}
 
     def test_kwargs_default_empty(self):
         assert utils.get_http_kwargs_from_context(TrpcContext()) == {}
@@ -158,24 +149,22 @@ class TestSocketAndUrls:
 
 class TestGetMcpApp:
 
+    @pytest.fixture(autouse=True)
+    def _reset_process_var(self):
+        set_current_process_var(TRPC_MCP_PROCESS_VAR, None)
+        yield
+        set_current_process_var(TRPC_MCP_PROCESS_VAR, None)
+
     def test_raises_when_missing(self):
-        proc = multiprocessing.current_process()
-        had = hasattr(proc, "mcp_app")
-        saved = getattr(proc, "mcp_app", None)
-        if had:
-            delattr(proc, "mcp_app")
-        try:
-            with pytest.raises(ValueError):
-                utils.get_mcp_app()
-        finally:
-            if had:
-                proc.mcp_app = saved
+        with pytest.raises(ValueError):
+            utils.get_mcp_app()
+
+    def test_raises_before_app_built(self):
+        set_current_process_var(TRPC_MCP_PROCESS_VAR, types.SimpleNamespace(mcp_app=None))
+        with pytest.raises(ValueError):
+            utils.get_mcp_app()
 
     def test_returns_app_when_present(self):
-        proc = multiprocessing.current_process()
         sentinel = object()
-        proc.mcp_app = sentinel
-        try:
-            assert utils.get_mcp_app() is sentinel
-        finally:
-            delattr(proc, "mcp_app")
+        set_current_process_var(TRPC_MCP_PROCESS_VAR, types.SimpleNamespace(mcp_app=sentinel))
+        assert utils.get_mcp_app() is sentinel

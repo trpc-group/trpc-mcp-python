@@ -1,13 +1,14 @@
-# -*- coding: utf-8 -*-
+# Tencent is pleased to support the open source community by making tRPC-MCP-Python available.
+#
+# Copyright (C) 2026 Tencent. All rights reserved.
+#
+# tRPC-MCP-Python is licensed under Apache-2.0.
 """Tests for trpc_mcp._logging."""
 
 import logging
-import types
 
-from trpc.log import logger as trpc_logger
-
-from trpc_mcp import _logging
 from trpc_mcp._logging import (
+    _LOGGER_NAMES,
     _PREFIX_FILTER_MARKER,
     _PREFIXED_RECORD_MARKER,
     _PackagePrefixFilter,
@@ -25,14 +26,10 @@ class TestIsTrpcRecord:
     def test_trpc_prefix(self):
         assert _PackagePrefixFilter._is_trpc_record("trpc.foo") is True
         assert _PackagePrefixFilter._is_trpc_record("trpc_mcp.bar") is True
+        assert _PackagePrefixFilter._is_trpc_record("trpc_sdk.log") is True
 
     def test_non_trpc(self):
         assert _PackagePrefixFilter._is_trpc_record("uvicorn.error") is False
-
-    def test_matches_global_logger_filename(self, monkeypatch):
-        fake_logger = types.SimpleNamespace(filename="custom-log-name")
-        monkeypatch.setattr(trpc_logger, "GlobalLogger", {"x": fake_logger}, raising=False)
-        assert _PackagePrefixFilter._is_trpc_record("custom-log-name") is True
 
 
 class TestFilter:
@@ -80,15 +77,31 @@ class TestInstallHandlerFilters:
 
 class TestBridge:
 
-    def test_no_handlers_returns_early(self, monkeypatch):
-        monkeypatch.setattr(_logging, "_trpc_python_handlers", lambda: [])
-        # Should simply return without raising.
-        bridge_third_party_loggers()
+    @staticmethod
+    def _markers(target):
+        return [f for f in target.filters if getattr(f, _PREFIX_FILTER_MARKER, False)]
 
-    def test_installs_handlers(self, monkeypatch):
-        handler = logging.NullHandler()
-        monkeypatch.setattr(_logging, "_trpc_python_handlers", lambda: [handler])
+    def test_loggers_propagate_with_one_prefix_filter(self):
+        logging.getLogger("uvicorn.error").propagate = False
+        bridge_third_party_loggers()
+        bridge_third_party_loggers()
+        for name in _LOGGER_NAMES:
+            target = logging.getLogger(name)
+            assert target.propagate is True
+            assert len(self._markers(target)) == 1
+
+    def test_root_logger_untouched(self):
+        root = logging.getLogger()
+        level = root.level
         bridge_third_party_loggers(level=logging.DEBUG)
+        assert root.level == level
+        assert self._markers(root) == []
+
+    def test_level_applied(self):
         mcp_logger = logging.getLogger("mcp")
-        assert handler in mcp_logger.handlers
-        assert mcp_logger.level == logging.DEBUG
+        saved = mcp_logger.level
+        try:
+            bridge_third_party_loggers(level=logging.DEBUG)
+            assert mcp_logger.level == logging.DEBUG
+        finally:
+            mcp_logger.setLevel(saved)

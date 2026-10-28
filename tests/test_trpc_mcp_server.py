@@ -1,4 +1,8 @@
-# -*- coding: utf-8 -*-
+# Tencent is pleased to support the open source community by making tRPC-MCP-Python available.
+#
+# Copyright (C) 2026 Tencent. All rights reserved.
+#
+# tRPC-MCP-Python is licensed under Apache-2.0.
 """Tests for trpc_mcp._trpc_mcp_server."""
 
 import types
@@ -6,9 +10,19 @@ import types
 import mcp.types as mcp_types
 import pytest
 from mcp.server.lowlevel.server import request_ctx
-from trpc.context import TrpcContext
+from trpc_sdk.abc import TrpcContext
+from trpc_sdk.abc import get_message
+from trpc_sdk.exceptions import TrpcErrorCode
+from trpc_sdk.exceptions import TrpcErrorType
+from trpc_sdk.exceptions import TrpcException
+from trpc_sdk.http import HTTP_REQ_KEY
+from trpc_sdk.http import HTTP_RSP_KEY
+from trpc_sdk.http import HTTP_TRPC_HEADER
+from trpc_sdk.http import LOCAL_ADDR
+from trpc_sdk.http import TRANS_INFO_BASE64_KEY
 
 from trpc_mcp import _trpc_mcp_server as srv
+from trpc_mcp._codec import TrpcMcpServerHttpCodec
 from trpc_mcp._trpc_mcp_server import (
     SERVER_NAME,
     TrpcMcpServer,
@@ -372,14 +386,14 @@ class TestCallToolUnknown:
 def _make_opts(port=8080, address="127.0.0.1"):
     service_opt = types.SimpleNamespace(protocol="http_mcp")
 
-    async def http_handle(ctx, cb):
-        await cb(ctx, None)
+    async def handle_http(ctx, cb):
+        await cb(ctx, get_message(ctx).server_raw_req)
         return None
 
-    service = types.SimpleNamespace(opt=service_opt, http_handle=http_handle)
+    service = types.SimpleNamespace(opt=service_opt, handle_http=handle_http)
     return types.SimpleNamespace(
         idle_timeout=10,
-        address=address,
+        address=(address, port),
         port=port,
         service_name="svc-a",
         service=service,
@@ -416,9 +430,31 @@ class TestFilterASGIApp:
         ]
         request = Request(_http_scope(method="POST", headers=headers))
         ctx = app._make_trpc_context(request)
+        message = get_message(ctx)
         assert ctx.get_meta_data(SERVER_NAME) == "svc-a"
+        assert ctx.get_meta_data(LOCAL_ADDR) == "127.0.0.1:8080"
+        assert ctx.get_meta_data(HTTP_REQ_KEY) is request
+        assert message.server_raw_req is request
+        assert message.server_raw_rsp is ctx.get_meta_data(HTTP_RSP_KEY)
+        assert message.caller_service_name == "caller.svc"
+        assert message.server_rpc_name == "/svc-a/handle"
+        assert ctx.recv_time > 0
         assert ctx.remote_ip == "9.9.9.9"
         assert request.scope["trpc_context"] is ctx
+
+    def test_decode_base64_trans_info(self):
+        import base64
+        import json
+
+        from starlette.requests import Request
+
+        trans_info = json.dumps({"k": base64.b64encode(b"v").decode()}).encode()
+        request = Request(_http_scope(headers=[(b"trpc-trans-info", trans_info)]))
+        ctx = TrpcContext()
+        ctx.with_meta_data(TRANS_INFO_BASE64_KEY, True)
+        message = get_message(ctx)
+        srv._TrpcFilterASGIApp._decode_trpc_req_header(ctx, message, request)
+        assert message.server_meta_data["k"] == "v"
 
     def test_get_opts_default_when_unknown_port(self):
         opts = _make_opts(port=1111)
@@ -435,7 +471,7 @@ class TestFilterASGIApp:
         assert result == message
 
     def test_merge_trpc_headers_adds(self):
-        from trpc.http import set_http_rsp_header
+        from trpc_sdk.http import set_http_rsp_header
 
         ctx = TrpcContext()
         set_http_rsp_header(ctx, {"X-New": "1", "a": "dup"})
@@ -491,10 +527,10 @@ class TestFilterASGIApp:
 
         opts = _make_opts()
 
-        async def http_handle(ctx, cb):
+        async def handle_http(ctx, cb):
             return b"result-body"
 
-        opts.service.http_handle = http_handle
+        opts.service.handle_http = handle_http
         wrapper = srv._TrpcFilterASGIApp(downstream, {opts.port: opts}, TrpcMcpServer(name="t"))
 
         async def receive():
@@ -505,6 +541,34 @@ class TestFilterASGIApp:
 
         run(wrapper(_http_scope(), receive, send))
         assert any(m["type"] == "http.response.start" for m in sent)
+
+    def test_call_http_filter_error_keeps_codec_status_and_headers(self):
+        sent = []
+        opts = _make_opts()
+
+        async def handle_http(ctx, cb):
+            # What ServiceAdapter.handle_http does when a filter fails: the
+            # codec writes the error onto server_raw_rsp and returns b"".
+            message = get_message(ctx)
+            message.set_server_rsp_err(
+                TrpcException(TrpcErrorType.FRAMEWORK, TrpcErrorCode.TRPC_SERVER_OVERLOAD_ERR, "denied"))
+            return TrpcMcpServerHttpCodec().encode_data(ctx, b"")
+
+        opts.service.handle_http = handle_http
+        wrapper = srv._TrpcFilterASGIApp(lambda *a: None, {opts.port: opts}, TrpcMcpServer(name="t"))
+
+        async def receive():
+            return {"type": "http.request", "body": b"", "more_body": False}
+
+        async def send(msg):
+            sent.append(msg)
+
+        run(wrapper(_http_scope(), receive, send))
+        start = next(m for m in sent if m["type"] == "http.response.start")
+        headers = dict(start["headers"])
+        assert start["status"] == 429
+        assert headers[HTTP_TRPC_HEADER.trpc_error_message.encode()] == b"denied"
+        assert headers[b"content-length"] == b"0"
 
 
 class TestCallToolHandler:

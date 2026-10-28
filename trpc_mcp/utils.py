@@ -1,6 +1,8 @@
-# -*- coding: utf-8 -*-
+# Tencent is pleased to support the open source community by making tRPC-MCP-Python available.
 #
-# Copyright @ 2025 Tencent.com
+# Copyright (C) 2026 Tencent. All rights reserved.
+#
+# tRPC-MCP-Python is licensed under Apache-2.0.
 """
 TRPC MCP Utilities Module
 
@@ -8,10 +10,7 @@ This module provides utility functions for TRPC MCP (Microservice Control Protoc
 It includes process management, data conversion and context handling utilities.
 """
 import inspect
-import ipaddress
 import socket
-import re
-import multiprocessing
 import warnings
 from functools import wraps
 from urllib.parse import urlparse
@@ -19,11 +18,13 @@ from typing import Callable, Any
 
 from mcp.server.fastmcp.server import FastMCP
 
-from trpc.context import TrpcContext
-from trpc.log import logger
-from trpc.http import defines as http_defines
-from trpc.utils import set_current_process_var
-from trpc.utils import get_current_process_var
+from trpc_sdk.abc import TrpcContext
+from trpc_sdk.common import get_current_process_var
+from trpc_sdk.common import set_current_process_var
+from trpc_sdk.http import HTTP_ARGS_META_KEY
+from trpc_sdk.log import logger
+
+from ._constants import TRPC_MCP_PROCESS_VAR
 
 set_object_to_process = set_current_process_var
 get_object_to_process = get_current_process_var
@@ -77,33 +78,10 @@ def normalize_path(mount_path: str, endpoint: str) -> str:
     return f"{mount_path}{endpoint}"
 
 
-MAX_PORT = 65535  # Maximum valid port number for TCP/IP
-
-
-def _is_valid_pattern(host: str) -> bool:
-    """Check if the host string is a valid IP address with port.
-
-    Args:
-        host: Host string to validate (format: "ip:port")
-
-    Returns:
-        bool: True if valid IP:port format, False otherwise
-    """
-    pattern = r"\b(?:\d{1,3}\.){3}\d{1,3}:\d+\b"
-    match = re.match(pattern, host)
-    if match:
-        ip, port = host.split(":")
-        try:
-            ipaddress.ip_address(ip)
-            if 0 <= int(port) <= MAX_PORT:
-                return True
-        except ValueError:
-            pass
-    return False
-
-
 def make_url(host: str, base_url: str = "", endpoint: str = "sse") -> str:
     """Construct SSE endpoint URL based on host and base URL.
+
+    A host without a scheme (IP:port or domain) is addressed over ``http://``.
 
     Args:
         host: Host address (IP:port or domain)
@@ -120,11 +98,7 @@ def make_url(host: str, base_url: str = "", endpoint: str = "sse") -> str:
         if host.count("://") == 1:
             return host
 
-    url = normalize_path(base_url, endpoint)
-    if _is_valid_pattern(host):
-        # host: xxx.xxx.xxx.xxx:{port}
-        return f"http://{host}{url}"
-    return f"polaris://{host}{url}"
+    return f"http://{host}{normalize_path(base_url, endpoint)}"
 
 
 _HTTP_HEADER: str = "_mcp_http_header"
@@ -160,7 +134,7 @@ def set_http_kwargs_to_context(ctx: TrpcContext, kwargs: dict[str, str]) -> None
         kwargs: Dictionary containing HTTP request parameters
               (e.g. query params, form data, etc.)
     """
-    ctx.with_meta_data(http_defines.HTTP_ARGS_META_KEY, kwargs)
+    ctx.with_meta_data(HTTP_ARGS_META_KEY, kwargs)
 
 
 def get_http_kwargs_from_context(ctx: TrpcContext) -> dict[str, Any]:
@@ -173,7 +147,7 @@ def get_http_kwargs_from_context(ctx: TrpcContext) -> dict[str, Any]:
         Dictionary containing stored HTTP request parameters.
         Returns empty dict if no kwargs found.
     """
-    return ctx.meta_data.get(http_defines.HTTP_ARGS_META_KEY, {})
+    return ctx.meta_data.get(HTTP_ARGS_META_KEY, {})
 
 
 def deprecated(details: str = ""):
@@ -226,14 +200,25 @@ def analyze_init_method(cls) -> dict:
 
 
 def create_uvicorn_compatible_socket(host: str, port: int) -> socket.socket:
-    """Create a socket suitable for uvicorn in multi-worker TRPC processes."""
+    """Create a socket suitable for uvicorn in multi-worker TRPC processes.
+
+    ``SO_REUSEPORT`` lets every rpc task (separate mode) or peer worker bind
+    the same address.
+
+    Raises:
+        OSError: If the socket cannot be bound.
+    """
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     try:
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
     except OSError:
         pass
-    sock.bind((host, port))
+    try:
+        sock.bind((host, port))
+    except OSError:
+        sock.close()
+        raise
     return sock
 
 
@@ -266,7 +251,8 @@ def get_mcp_app() -> FastMCP:
     Raises:
         ValueError: If MCP app is not found in current process
     """
-    current_process = multiprocessing.current_process()
-    if not hasattr(current_process, 'mcp_app'):
+    mcp_process = get_current_process_var(TRPC_MCP_PROCESS_VAR)
+    mcp_app = getattr(mcp_process, "mcp_app", None)
+    if mcp_app is None:
         raise ValueError("MCP app not found in current process")
-    return getattr(current_process, 'mcp_app')
+    return mcp_app

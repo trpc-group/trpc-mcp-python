@@ -1,12 +1,14 @@
-# -*- coding: utf-8 -*-
+# Tencent is pleased to support the open source community by making tRPC-MCP-Python available.
 #
-# Copyright @ 2025 Tencent.com
+# Copyright (C) 2026 Tencent. All rights reserved.
+#
+# tRPC-MCP-Python is licensed under Apache-2.0.
 """MCP Prompt Callback Implementations.
 
 This module contains prompt handler implementations for MCP protocol.
 Each function is decorated with @trpc_mcp.prompt to register it as a prompt handler.
 """
-from trpc.context import TrpcContext
+from trpc_sdk.abc import TrpcContext
 
 import trpc_mcp
 
