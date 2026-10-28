@@ -1,6 +1,8 @@
-# -*- coding: utf-8 -*-
+# Tencent is pleased to support the open source community by making tRPC-MCP-Python available.
 #
-# Copyright @ 2025 Tencent.com
+# Copyright (C) 2026 Tencent. All rights reserved.
+#
+# tRPC-MCP-Python is licensed under Apache-2.0.
 """
 TRPC MCP Client Module
 
@@ -17,11 +19,10 @@ from urllib.parse import urlunparse
 
 import anyio
 from pydantic.networks import AnyUrl
-from trpc.client.config import client_config
-from trpc.client.options import with_protocol
-from trpc.client.options import with_timeout
-from trpc.context import TrpcContext
-from trpc.log import logger
+from trpc_sdk.abc import TrpcContext
+from trpc_sdk.client import Options
+from trpc_sdk.config import TrpcConfig
+from trpc_sdk.log import logger
 
 from mcp.client.session import ClientSession
 from mcp.client.sse import sse_client
@@ -126,11 +127,11 @@ class McpProxy:
         """Return the configured trpc ``client.service`` target (scheme kept).
 
         The scheme selects the trpc selector, so it must be preserved:
-        ``ip://127.0.0.1:8008`` (direct), ``polaris://service`` (Polaris) or a
-        custom selector such as ``test://service``. :meth:`_resolve_urls` keeps
+        ``ip://127.0.0.1:8008`` (direct) or a custom selector such as
+        ``test://service``. :meth:`_resolve_urls` keeps
         this scheme instead of re-guessing it.
         """
-        return getattr(client_config(self.name), "target", "") or ""
+        return getattr(TrpcConfig.client_service_config(self.name), "target", "") or ""
 
     def _resolve_runtime(self, host: str | None, transport: str | None) -> tuple[str, str, str]:
         """Resolve host/transport/base_url with precedence: arg > config > default."""
@@ -158,15 +159,15 @@ class McpProxy:
         merged = list(options or [])
         merged.extend(self.__options or [])
         if not merged:
-            merged.append(with_timeout(_DEFAULT_TIMEOUT_MS))
+            merged.append(Options().set_timeout(_DEFAULT_TIMEOUT_MS))
         # McpProxy is always an MCP client, so force the dedicated ``http_mcp``
         # protocol regardless of what the client.service declares (legacy entries
-        # use ``protocol: http``). The trpc HTTP client hardcodes
-        # ``with_protocol('http')`` at the front of its option list; appending here
-        # makes the MCP protocol win (options apply in order, last write wins) and
-        # selects the MCP-aware codec/transport without affecting plain HTTP
-        # business clients that keep using the framework default ``http`` codec.
-        merged.append(with_protocol(TRPC_MCP_PROTOCOL))
+        # use ``protocol: http``). The trpc HTTP client puts
+        # ``Options().set_protocol('http')`` at the front of its option list;
+        # appending here makes the MCP protocol win (options apply in order, last
+        # write wins) and selects the MCP-aware codec/transport without affecting
+        # plain HTTP business clients that keep using the framework ``http`` codec.
+        merged.append(Options().set_protocol(TRPC_MCP_PROTOCOL))
         return merged
 
     async def _call_with_context(
@@ -230,19 +231,17 @@ class McpProxy:
     def _resolve_urls(self, host: str, endpoint: str) -> tuple[str, str, str]:
         """Resolve the MCP SDK display URL and the trpc routing scheme/netloc.
 
-        ``make_url`` yields ``http://ip:port/<ep>`` for direct IPs and
-        ``polaris://service/<ep>`` for Polaris service names. The MCP SDK requires
-        an http(s) URL (used only for its API surface and origin checks since our
-        custom httpx transport intercepts the request), while the trpc routing
-        scheme (http/polaris) is carried separately so addressing still works.
+        ``make_url`` yields ``http://host/<ep>`` for hosts without a scheme. The
+        MCP SDK requires an http(s) URL (used only for its API surface and origin
+        checks since our custom httpx transport intercepts the request), while the
+        trpc routing scheme is carried separately so selector addressing still works.
         """
         parsed_host = urlparse(host)
         if parsed_host.scheme and parsed_host.netloc:
             # Host already carries an explicit routing scheme (from the configured
-            # client.service target). Preserve it so ip:// (direct), polaris://
-            # (Polaris) and custom selectors like test:// all keep working;
-            # make_url would otherwise re-guess http (for IPs) or polaris (names)
-            # and silently drop a custom selector scheme.
+            # client.service target). Preserve it so ip:// (direct) and custom
+            # selectors like test:// keep working; make_url would otherwise
+            # fall back to http and silently drop a custom selector scheme.
             trpc_url = f"{parsed_host.scheme}://{parsed_host.netloc}{normalize_path(self.base_url, endpoint)}"
         else:
             trpc_url = make_url(host, self.base_url, endpoint)

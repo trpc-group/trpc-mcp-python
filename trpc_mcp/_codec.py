@@ -1,37 +1,60 @@
-# -*- coding: utf-8 -*-
+# Tencent is pleased to support the open source community by making tRPC-MCP-Python available.
 #
-# Copyright @ 2025 Tencent.com
+# Copyright (C) 2026 Tencent. All rights reserved.
+#
+# tRPC-MCP-Python is licensed under Apache-2.0.
+"""HTTP codecs and plugin registrations for the ``http_mcp`` protocol.
+
+Every plugin is registered at import time: ``create_server`` calls
+``ServiceOption.set_protocol`` and clients call ``Options().set_protocol``,
+and both look the plugins up right away.
+"""
 
 import http
 
 from aiohttp import hdrs
-from trpc.plugin import PluginInitPos
-from trpc.plugin import PluginType
-from trpc.plugin import register_plugin
-from trpc.plugin import DefaultPluginManager
-from trpc.codec.message import Message
-from trpc.exceptions import ClientInvokeError
-from trpc.exceptions import ErrorCode
-from trpc.exceptions import ErrorType
-from trpc.exceptions import TRPCBaseError
-from trpc.http import defines as http_defines
-
-from trpc.http.codec import ServerHttpChecker
-from trpc.http.codec import ServerHttpCodec
-from trpc.http.codec import ClientHttpChecker
-from trpc.http.codec import ClientHttpCodec
+from trpc_sdk.abc import BasePlugin
+from trpc_sdk.abc import PluginInitPos
+from trpc_sdk.abc import PluginType
+from trpc_sdk.abc import TrpcContext
+from trpc_sdk.abc import TrpcMessage
+from trpc_sdk.abc import get_message
+from trpc_sdk.exceptions import ClientInvokeError
+from trpc_sdk.exceptions import TrpcErrorCode
+from trpc_sdk.exceptions import TrpcErrorType
+from trpc_sdk.exceptions import TrpcException
+from trpc_sdk.http import ClientHttpCodec
+from trpc_sdk.http import ClientHttpParser
+from trpc_sdk.http import HTTP_TRPC_HEADER
+from trpc_sdk.http import HttpClientTransport
+from trpc_sdk.http import ServerHttpCodec
+from trpc_sdk.http import ServerHttpParser
+from trpc_sdk.http import find_compress_type
+from trpc_sdk.http import find_http_status
+from trpc_sdk.http import get_trpc_error_code
+from trpc_sdk.plugin import register_plugin
 
 from ._constants import TRPC_MCP_PROTOCOL
 from .version import __version__ as trpc_mcp_version
 
 
 class TrpcMcpServerHttpCodec(ServerHttpCodec):
-    """HTTP codec that works with the Starlette response used by MCP transport."""
+    """HTTP codec that works with the Starlette request/response used by MCP transport."""
 
-    @classmethod
-    def encode(cls, message: Message, body: bytes) -> bytes:
-        request = message.context.get_meta_data(http_defines.HTTP_REQ_KEY)
-        response = message.context.get_meta_data(http_defines.HTTP_RSP_KEY)
+    def encode_data(self, context: TrpcContext, body: bytes) -> bytes:
+        """Write Content-Type, error status and tRPC headers onto the Starlette response.
+
+        Args:
+            context: Server request context whose message holds the Starlette
+                request and response as ``server_raw_req`` / ``server_raw_rsp``.
+            body: Already-serialized response body.
+
+        Returns:
+            ``body`` unchanged.
+        """
+        message: TrpcMessage = get_message(context)
+        request = message.server_raw_req
+        response = message.server_raw_rsp
 
         content_type = response.headers.get(hdrs.CONTENT_TYPE, "")
         if content_type == "":
@@ -41,14 +64,13 @@ class TrpcMcpServerHttpCodec(ServerHttpCodec):
             else:
                 response.headers[hdrs.CONTENT_TYPE] = req_content_type
 
-        err: TRPCBaseError = message.server_rsp_err
-        if err.code != ErrorCode.TRPC_INVOKE_SUCCESS:
-            response.headers[http_defines.HTTP_TRPC_HEADER.trpc_error_message] = err.msg
-            trpc_error_code = http_defines.get_trpc_error_code(err.type,
-                                                               http_defines.HTTP_TRPC_HEADER.trpc_user_func_error_code)
+        err: TrpcException = message.server_rsp_err
+        if err is not None and err.code != TrpcErrorCode.TRPC_INVOKE_SUCCESS:
+            response.headers[HTTP_TRPC_HEADER.trpc_error_message] = err.msg
+            trpc_error_code = get_trpc_error_code(err.type, HTTP_TRPC_HEADER.trpc_user_func_error_code)
             response.headers[trpc_error_code] = str(err.code)
-            http_code = http_defines.find_http_status(err.code, None)
-            response_status = getattr(response, "status", getattr(response, "status_code", http.HTTPStatus.OK.value))
+            http_code = find_http_status(err.code, None)
+            response_status = getattr(response, "status_code", http.HTTPStatus.OK.value)
             if http_code is None:
                 if response_status in http.HTTPStatus.__members__.values():
                     http_code = http.HTTPStatus(response_status)
@@ -56,31 +78,30 @@ class TrpcMcpServerHttpCodec(ServerHttpCodec):
                     http_code = http.HTTPStatus(err.code)
                 else:
                     http_code = http.HTTPStatus.OK
-            cls._set_response_status(response, http_code)
+            response.status_code = http_code.value
 
-        cls.encode_trpc_rsp_header(message, response.headers)
+        self.encode_trpc_rsp_header(context, message, response.headers)
 
         return body
 
-    @staticmethod
-    def _set_response_status(response, http_code: http.HTTPStatus) -> None:
-        if hasattr(response, "set_status"):
-            response.set_status(http_code.value, http_code.phrase)
-            return
-        response.status_code = http_code.value
 
-
-# Register the MCP-aware client codec ONLY under the dedicated ``http_mcp``
-# protocol, NOT under the global ``http`` name. Overriding ``http`` would force
-# every plain HTTP business client in the same process to use the MCP codec; by
-# isolating it here, plain ``protocol: http`` clients keep the framework default
-# codec and MCP clients (which speak ``http_mcp``) coexist cleanly.
-@register_plugin(PluginType.CLIENT_CODEC, TRPC_MCP_PROTOCOL, init_pos=PluginInitPos.MASTER)
 class TrpcMcpClientHttpCodec(ClientHttpCodec):
     """HTTP client codec that accepts MCP streaming response status codes."""
 
-    @classmethod
-    def decode(cls, message: Message, _: bytes) -> bytes:
+    def decode_data(self, context: TrpcContext, _: bytes) -> bytes:
+        """Map tRPC error headers and non-200/202 statuses onto ``client_rsp_err``.
+
+        Args:
+            context: Client call context.
+            _: Unused; the body lives on ``client_rsp_head``.
+
+        Returns:
+            Response body bytes, or ``b''`` for a streamed response.
+
+        Raises:
+            ClientInvokeError: ``client_rsp_head`` is missing.
+        """
+        message: TrpcMessage = get_message(context)
         rsp_header = message.client_rsp_head
         if not rsp_header:
             raise ClientInvokeError("no rsp header")
@@ -88,24 +109,24 @@ class TrpcMcpClientHttpCodec(ClientHttpCodec):
         headers: dict = rsp_header.headers
         encode = headers.get(hdrs.CONTENT_ENCODING)
         if encode:
-            message.set_compress_type(http_defines.find_compress_type(encode, 0))
+            message.set_compress_type(find_compress_type(encode, 0))
 
-        ret = int(headers.get(http_defines.HTTP_TRPC_HEADER.trpc_framework_error_code, "0"))
+        ret = int(headers.get(HTTP_TRPC_HEADER.trpc_framework_error_code, "0"))
         if ret != 0:
             message.set_client_rsp_err(
-                TRPCBaseError(
-                    ErrorType.CalleeFramework,
+                TrpcException(
+                    TrpcErrorType.CALLEE_FRAMEWORK,
                     ret,
-                    headers.get(http_defines.HTTP_TRPC_HEADER.trpc_error_message, "callee framework error"),
+                    headers.get(HTTP_TRPC_HEADER.trpc_error_message, "callee framework error"),
                 ))
 
-        func_ret = int(headers.get(http_defines.HTTP_TRPC_HEADER.trpc_user_func_error_code, "0"))
+        func_ret = int(headers.get(HTTP_TRPC_HEADER.trpc_user_func_error_code, "0"))
         if func_ret != 0:
             message.set_client_rsp_err(
-                TRPCBaseError(
-                    ErrorType.Business,
+                TrpcException(
+                    TrpcErrorType.BUSINESS,
                     func_ret,
-                    headers.get(http_defines.HTTP_TRPC_HEADER.trpc_error_message, "business error"),
+                    headers.get(HTTP_TRPC_HEADER.trpc_error_message, "business error"),
                 ))
 
         if rsp_header.status_code not in {http.HTTPStatus.OK, http.HTTPStatus.ACCEPTED}:
@@ -116,29 +137,22 @@ class TrpcMcpClientHttpCodec(ClientHttpCodec):
         return rsp_header.body
 
 
+# Registered ONLY under the dedicated ``http_mcp`` protocol, NOT under ``http``:
+# plain ``protocol: http`` clients in the same process keep the framework
+# default codec, while MCP clients (which speak ``http_mcp``) use these.
+register_plugin(PluginType.SERVER_CODEC, TRPC_MCP_PROTOCOL, init_pos=PluginInitPos.WORKER)(TrpcMcpServerHttpCodec)
+register_plugin(PluginType.SERVER_PARSER, TRPC_MCP_PROTOCOL, init_pos=PluginInitPos.WORKER)(ServerHttpParser)
+register_plugin(PluginType.CLIENT_CODEC, TRPC_MCP_PROTOCOL, init_pos=PluginInitPos.WORKER)(TrpcMcpClientHttpCodec)
+register_plugin(PluginType.CLIENT_PARSER, TRPC_MCP_PROTOCOL, init_pos=PluginInitPos.WORKER)(ClientHttpParser)
+# ``Options().set_protocol`` only swaps the transport when one is registered
+# under that name; without it ``protocol: http_mcp`` clients would have none.
+register_plugin(PluginType.CLIENT_TRANSPORT, TRPC_MCP_PROTOCOL, init_pos=PluginInitPos.WORKER)(HttpClientTransport)
+
+
 @register_plugin(PluginType.USER_DEFINED,
                  TRPC_MCP_PROTOCOL,
-                 init_pos=PluginInitPos.MASTER,
+                 init_pos=PluginInitPos.WORKER,
                  version=trpc_mcp_version,
-                 stat_flag=True)
-def report_trpc_mcp_codec_plugin():
-    """
-    Report info of trpc mcp codec plugin
-
-    This function registers the TRPC MCP codec plugin with the TRPC framework.
-    It provides metadata about the plugin including version and initialization
-    position for proper plugin lifecycle management.
-    """
-    # Reuse the framework's HTTP client transport so the MCP protocol name can be
-    # used on the client side too (``with_protocol`` only overrides the transport
-    # when one is registered under that protocol name; without this, configuring
-    # ``protocol: http_mcp`` on a client.service would have no transport).
-    http_client_transport = DefaultPluginManager.get_instance(PluginType.CLIENT_TRANSPORT, http_defines.HTTP)
-    DefaultPluginManager.set_instance(PluginType.SERVER_CHECKER, TRPC_MCP_PROTOCOL, ServerHttpChecker())
-    DefaultPluginManager.set_instance(PluginType.SERVER_CODEC, TRPC_MCP_PROTOCOL, TrpcMcpServerHttpCodec())
-    DefaultPluginManager.set_instance(PluginType.CLIENT_CHECKER, TRPC_MCP_PROTOCOL, ClientHttpChecker())
-    # Use the MCP-aware client codec (handles ACCEPTED/streaming responses),
-    # mirroring the codec registered under the plain ``http`` protocol.
-    DefaultPluginManager.set_instance(PluginType.CLIENT_CODEC, TRPC_MCP_PROTOCOL, TrpcMcpClientHttpCodec())
-    if http_client_transport is not None:
-        DefaultPluginManager.set_instance(PluginType.CLIENT_TRANSPORT, TRPC_MCP_PROTOCOL, http_client_transport)
+                 report=True)
+class TrpcMcpPlugin(BasePlugin):
+    """Marks trpc-mcp for plugin version reporting; does nothing else."""

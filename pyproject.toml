@@ -26,20 +26,21 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
 ]
 dependencies = [
-    "trpc>=0.9.6",
+    "trpc-python",
     "mcp>=1.11.0,<2",
-    "redis"
+    "redis",
+    "uvicorn",
 ]
 
 [project.urls]
 Documentation = ""
 Repository = ""
 
-# 若需包含非代码文件（如数据、模板等）
+# Include non-code files such as data and templates when needed.
 [tool.setuptools.package-data]
 "*" = ["*.txt", "*.md", "*.yml", "*.yaml"]
 
-# 可选：添加工具配置
+# Optional tool configuration.
 [tool.black]
 line-length = 120
 target-version = ['py310']

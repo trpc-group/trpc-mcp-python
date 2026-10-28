@@ -1,13 +1,15 @@
-# -*- coding: utf-8 -*-
+# Tencent is pleased to support the open source community by making tRPC-MCP-Python available.
 #
-# Copyright @ 2025 Tencent.com
+# Copyright (C) 2026 Tencent. All rights reserved.
+#
+# tRPC-MCP-Python is licensed under Apache-2.0.
 """httpx transport that routes MCP SDK requests through the trpc client flow.
 
 The official MCP SDK client transports (``sse_client`` / ``streamablehttp_client``)
 program against ``httpx`` and expose an ``httpx_client_factory`` injection point.
 This module provides a custom ``httpx.AsyncBaseTransport`` so that the MCP SDK
 transports and session stay completely unmodified, while every HTTP round trip is
-executed by trpc-python's client (selector / Polaris addressing, filters, options,
+executed by trpc-python's client (selector addressing, filters, options,
 codec). This keeps the trpc client flow intact and uses the MCP SDK at the
 transport layer.
 """
@@ -16,10 +18,10 @@ import contextlib
 from typing import Any
 
 import httpx
-from trpc.context import TrpcContext
-from trpc.http import defines as http_defines
-from trpc.http.client import Client as TrpcHttpClient
-from trpc.log import logger
+from trpc_sdk.abc import TrpcContext
+from trpc_sdk.http import Client as TrpcHttpClient
+from trpc_sdk.http import HTTP_ARG_STREAM_KEY
+from trpc_sdk.log import logger
 
 from mcp.client import streamable_http as _mcp_streamable_http
 
@@ -52,8 +54,8 @@ class TrpcHttpxTransport(httpx.AsyncBaseTransport):
 
     Routing target/scheme are fixed for the lifetime of one MCP connection
     (resolved from the proxy host), while the request path/query/method/body come
-    from the MCP SDK. trpc re-runs node selection on every request, so Polaris
-    dynamic addressing still works per call.
+    from the MCP SDK. trpc re-runs node selection on every request, so
+    dynamic selector addressing still works per call.
     """
 
     def __init__(self,
@@ -84,7 +86,7 @@ class TrpcHttpxTransport(httpx.AsyncBaseTransport):
         trpc_url = self._build_trpc_url(request)
         headers = self._build_headers(request)
         kwargs = dict(get_http_kwargs_from_context(self._ctx))
-        kwargs[http_defines.HTTP_ARG_STREAM_KEY] = True
+        kwargs[HTTP_ARG_STREAM_KEY] = True
         body = request.content or None
 
         rsp = await self._client.request(

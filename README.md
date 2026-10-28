@@ -1,64 +1,62 @@
-# trpc-mcp
+English | [中文](README.zh_CN.md)
 
-`trpc-mcp` 是 trpc-python 框架对接 **MCP（Model Context Protocol）** 协议的插件。它让你用 trpc 的方式提供和调用 MCP 能力（Tool / Resource / Prompt），并把 MCP 接入 trpc 的服务治理体系。
+# tRPC-MCP-Python
 
-一句话概括：
+`ttRPC-MCP-Python` is the trpc-python plugin for the **MCP (Model Context Protocol)**. It lets you expose and call MCP capabilities (Tool / Resource / Prompt) the trpc way, and plugs MCP into trpc service governance.
+
+In one line:
 
 ```text
-trpc-mcp = 官方 MCP SDK（FastMCP / ClientSession）+ trpc-python 服务治理（selector / 北极星 / filter / options）+ SSE & Streamable-HTTP 传输
+trpc-mcp = official MCP SDK (FastMCP / ClientSession) + trpc-python governance (selector / filter / options) + SSE & Streamable-HTTP transports
 ```
 
-服务端用装饰器声明能力、由 trpc server 托管；客户端用 `McpProxy` 调用，传输层桥接到 trpc 客户端，从而复用 trpc 全套治理能力，同时接口形态与官方 MCP SDK 保持一致。
+The server declares capabilities with decorators and is hosted by the trpc server. The client calls them through `McpProxy`. The transport bridges to the trpc client, so the full trpc governance stack is reused, while the API stays aligned with the official MCP SDK.
 
-## 核心特点
+## Highlights
 
-- **trpc 原生体验**：服务端 `@trpc_mcp.tool / @trpc_mcp.resource / @trpc_mcp.prompt` 声明能力；客户端 `McpProxy` 像普通 trpc 后端一样按配置寻址、调用。
-- **复用官方 MCP SDK**：构建在官方 `mcp` SDK 之上（`FastMCP` / `ClientSession` / 官方传输），协议新特性大多"继承即用"，维护成本低。
-- **对接 trpc 服务治理**：客户端复用 selector（IP / 北极星 / 自定义）、filter、options（协议 / 命名空间 / 超时 / 染色）等治理链路。
-- **多传输支持**：SSE 与 Streamable-HTTP 两种传输可切换（不支持 stdio）；多 worker SSE 可用 redis 做会话同步。
-- **双向通道**：除 client→server 调用外，支持 server→client 回调（`roots/list`、`sampling`、`elicitation` 等，通过 `session_args` 注入）。
-- **结构化输出**：支持 `outputSchema` 与 `CallToolResult.structuredContent`，调用方可按字段可靠读取结果。
-- **多 service 隔离**：能力可绑定到指定 service，也可作为公共能力被所有 service 访问。
-- **版本自适应**：依赖 `mcp>=1.11.0,<2`，对各版本差异（如 `icons`/`meta`/resource `annotations`、`call_tool(meta=)`）做了自适应，低版本自动降级不报错。
+- **Native trpc experience**: the server declares capabilities with `@trpc_mcp.tool / @trpc_mcp.resource / @trpc_mcp.prompt`; the client `McpProxy` resolves and calls a backend from config like any other trpc client.
+- **Built on the official MCP SDK**: implemented on top of the official `mcp` SDK (`FastMCP` / `ClientSession` / official transports). New protocol features are mostly inherited, so the maintenance cost stays low.
+- **trpc service governance**: the client reuses selector (IP / custom), filter, and options (protocol / namespace / timeout / dyeing).
+- **Multiple transports**: SSE and Streamable-HTTP can be switched (stdio is not supported). Multi-process SSE can sync sessions through redis.
+- **All process models**: single-process merge (single loop / multi-thread), separate, and peer all work. Each service process runs one MCP app and one uvicorn, and exits gracefully with the framework on SIGTERM.
+- **Bidirectional channel**: besides client→server calls, server→client callbacks are supported (`roots/list`, `sampling`, `elicitation`, and others, injected through `session_args`).
+- **Structured output**: `outputSchema` and `CallToolResult.structuredContent` are supported, so callers can read results by field.
+- **Multi-service isolation**: a capability can be bound to one service, or shared and visible to every service.
+- **Version adaptive**: depends on `mcp>=1.11.0,<2` and adapts to version differences (such as `icons` / `meta` / resource `annotations` and `call_tool(meta=)`). Older versions degrade automatically and do not raise.
 
-## 安装与快速开始
+## Install and quick start
 
-### 环境要求
+### Requirements
 
-- Python `>=3.10`（推荐 3.12），建议用虚拟环境隔离依赖。
+- Python `>=3.10` (3.12 recommended). Use a virtual environment to isolate dependencies.
+- The trpc-python SDK (import name `trpc_sdk`, PyPI name `trpc-python`). Windows is not supported.
 
-### 安装
+### Install
 
 ```bash
-pip install trpc-mcp -i  --extra-index-url
+pip install trpc-mcp
 ```
 
-升级（强制更新到指定版本，版本号按需替换）：
+Dependencies: `trpc-python` (provides `trpc_sdk`), `mcp>=1.11.0,<2`, `uvicorn`, and `redis` (required for multi-process SSE).
 
-```bash
-pip install --upgrade --force-reinstall trpc_mcp==0.3.0a1 -i  --extra-index-url
-```
+### Quick start
 
-依赖：`mcp>=1.11.0,<2`、`trpc>=0.9.6`、`redis`（多 worker SSE 场景需要）。
-
-### 快速开始
-
-#### 1. 服务端：声明能力并启动
+#### 1. Server: declare capabilities and start
 
 ```python
 # trpc_main.py
-import trpc
 import trpc_mcp
+from trpc_sdk.server import create_server
 
 
-@trpc_mcp.tool()                       # 不指定 mcp_name -> 所有 service 可见
+@trpc_mcp.tool()                       # omit mcp_name -> visible to every service
 def add(ctx, a: int, b: int) -> int:
-    """两个整数相加"""
+    """Add two integers."""
     return a + b
 
 
 @trpc_mcp.resource("echo://static", mcp_name="trpc.test.mcp.Greeter1")
-def echo_resource(ctx) -> str:         # 绑定到指定 service
+def echo_resource(ctx) -> str:         # bound to one service
     return "this is static resource!"
 
 
@@ -68,29 +66,29 @@ def echo_prompt(ctx, prompt: str) -> str:
 
 
 def serve(conf_path: str):
-    svr = trpc.new(conf_path)
-    trpc_mcp.register_trpc_mcp_server(svr, None)   # 把已注册的 MCP 能力挂到 trpc server
+    svr = create_server(conf_path)
+    trpc_mcp.register_trpc_mcp_server(svr, None)   # attach registered MCP capabilities to the trpc server
     svr.serve()
 ```
 
-启动：
+Start:
 
 ```bash
 python trpc_main.py --conf trpc_python.yaml
 ```
 
-#### 2. 客户端：用 McpProxy 调用
+#### 2. Client: call with McpProxy
 
 ```python
 import trpc_mcp
-from trpc.client.options import with_protocol, with_namespace
-from trpc.context import TrpcContext
+from trpc_sdk.abc import TrpcContext
+from trpc_sdk.client import Options
 
 
 async def call():
     proxy = trpc_mcp.McpProxy(
-        name="trpc.test.mcp.Greeter1",                 # 按配置自动寻址
-        options=[with_protocol("http_mcp"), with_namespace("Development")],
+        name="trpc.test.mcp.Greeter1",                 # resolve from config
+        options=[Options().set_protocol("http_mcp").set_namespace("Development")],
     )
     try:
         await proxy.initialize(TrpcContext())
@@ -101,54 +99,55 @@ async def call():
         await proxy.cleanup()
 ```
 
-> 各功能（tool / prompt / resource / 结构化输出 / icons·meta / roots / 自定义 selector / 北极星）的完整可运行示例、配置说明与一键运行脚本见 **[`examples/README.md`](examples/README.md)**。
+> Runnable examples, config notes, and one-shot scripts for each feature (tool / prompt / resource / structured output / icons·meta / roots / custom selector) are in **[`examples/README.md`](examples/README.md)**.
 
-## 整体设计
+## Design
 
-客户端复用 trpc 客户端治理链路，传输层桥接到官方 MCP SDK；服务端是继承官方 `FastMCP` 的 trpc 适配层。
+The client reuses the trpc client governance path and bridges the transport to the official MCP SDK. The server is a trpc adapter that subclasses the official `FastMCP`.
 
 ```mermaid
 flowchart TD
     subgraph Client
       A[TrpcContext + options] --> B[McpProxy]
-      B --> C[官方 ClientSession + sse_client / streamable_http_client]
-      C --> D[httpx 桥接 TrpcHttpxTransport]
-      D --> E[trpc http 客户端: selector / 北极星 / filter / options / codec]
+      B --> C[official ClientSession + sse_client / streamable_http_client]
+      C --> D[httpx bridge TrpcHttpxTransport]
+      D --> E[trpc http client: selector / filter / options / codec]
     end
-    E -->|HTTP / SSE| F[trpc server: TrpcMcpServerTransport]
+    E -->|HTTP / SSE| F[one uvicorn thread per service process: start_mcp]
     subgraph Server
-      F --> G[TrpcMcpServer 继承 FastMCP]
+      F --> G[TrpcMcpServer subclasses FastMCP]
       G --> H[Tools / Resources / Prompts]
     end
 ```
 
-要点：
+Key points:
 
-- **客户端**：`McpProxy` 驱动官方 `ClientSession` 与官方传输，但所有 HTTP 往返通过 `httpx` 自定义传输落到 trpc 客户端，从而每次请求都走 trpc 的节点选择、filter、options 与编解码。
-- **服务端**：`TrpcMcpServer` 继承官方 `FastMCP`，由 `TrpcMcpServerTransport` 接入 trpc server，能力通过装饰器注册。
-- **会话隔离**：Streamable-HTTP 的单会话崩溃隔离由官方 SDK（`mcp>=1.11.0`）保证，trpc-mcp 直接复用。
+- **Client**: `McpProxy` drives the official `ClientSession` and official transports, but every HTTP round trip goes through a custom `httpx` transport into the trpc client. Each request therefore runs trpc node selection, filter, options, and codec.
+- **Server**: `TrpcMcpServer` subclasses the official `FastMCP`. `import trpc_mcp` registers the protocol starter with `trpc_sdk.transport.register_protocol_handle("http_mcp", start_mcp)`. The SDK calls it in each service process and starts one uvicorn thread that hosts every `http_mcp` port of that process. Requests pass the trpc server filter chain before entering MCP.
+- **Session isolation**: crash isolation for a single Streamable-HTTP session is provided by the official SDK (`mcp>=1.11.0`). trpc-mcp reuses it directly.
 
-## 使用方式
+## Usage
 
-### 服务端能力声明
+### Declaring server capabilities
 
 - `@trpc_mcp.tool(name=, title=, description=, structured_output=, annotations=, icons=, meta=, mcp_name=)`
 - `@trpc_mcp.resource(uri, name=, title=, description=, mime_type=, icons=, annotations=, meta=, mcp_name=)`
 - `@trpc_mcp.prompt(name=, title=, description=, icons=, mcp_name=)`
 
-`mcp_name` 决定能力绑定到哪个 service；不填则为公共能力（所有 service 可见）。函数第一个参数固定是 `ctx`（`TrpcContext`），可用 `trpc_mcp.get_http_req(ctx)`、`get_server_addr(ctx)`、`get_session_func(ctx)` 等读取上下文。
+`mcp_name` selects which service a capability is bound to. Leave it unset for a shared capability (visible to every service). The first function argument is always `ctx` (`TrpcContext`). Use `trpc_mcp.get_http_req(ctx)`, `get_server_addr(ctx)`, `get_session_func(ctx)`, and similar helpers to read the context.
 
-### 客户端 McpProxy
+### Client McpProxy
 
-常用方法：`list_tools` / `execute_tool` / `list_resources` / `list_resource_templates` / `read_resource` / `list_prompts` / `get_prompts`。
+Common methods: `list_tools` / `execute_tool` / `list_resources` / `list_resource_templates` / `read_resource` / `list_prompts` / `get_prompts`.
 
-- host / base_url / transport / target 可从配置自动解析，也可在构造或 `options` 显式指定（优先级：构造参数 > options > 配置）。
-- 自定义 HTTP 头：`set_http_header_to_context(ctx, {...})`，会注入到该连接的每个 HTTP 请求。
-- 注入官方 `ClientSession` 回调（server→client）：`initialize(ctx, session_args={"list_roots_callback": ..., "sampling_callback": ..., "elicitation_callback": ...})`。
+- host / base_url / transport / target can be resolved from config, or set explicitly in the constructor or `options` (priority: constructor arguments > options > config).
+- `options` is a list of `trpc_sdk.client.Options`, applied in order, with later entries overriding earlier ones. `McpProxy` appends `set_protocol("http_mcp")` at the end, and adds a default timeout when no options are passed.
+- Custom HTTP headers: `set_http_header_to_context(ctx, {...})` injects them into every HTTP request on that connection.
+- Official `ClientSession` callbacks (server→client): `initialize(ctx, session_args={"list_roots_callback": ..., "sampling_callback": ..., "elicitation_callback": ...})`.
 
-### 配置
+### Configuration
 
-MCP 相关配置在 `plugins.mcp`，例如选择传输和 base_url：
+MCP settings live under `plugins.mcp`. For example, transport and base_url:
 
 ```yaml
 plugins:
@@ -159,11 +158,11 @@ plugins:
       settings:
         message_path: /messages/
     client:
-      transport: sse            # McpProxy 未显式传参时的默认传输
+      transport: sse            # default transport when McpProxy does not set one
       base_url: /test
 ```
 
-多节点 SSE 用 redis 做会话同步（否则请求路由到不同 worker 会导致 session 失效）：
+Multi-process SSE uses redis to sync sessions (otherwise a request routed to a different process invalidates the session):
 
 ```yaml
 plugins:
@@ -175,45 +174,74 @@ plugins:
         db: 0
 ```
 
-## 注意事项
+## Process and thread model
 
-- **协议**：服务端与客户端的 `protocol` 都用 `http_mcp`；自定义 selector 返回的 `node.protocol` 也要是 `http_mcp`，否则 codec 会被降级。
-- **base_url**：客户端与服务端要一致，否则路径拼接 404。
-- **SSE 模式**：`worker_num: 1`；若要多 worker，必须配置 redis（框架多进程，对有状态服务不友好）。
-- **Streamable-HTTP 模式**：
-  - 有状态（`stateless_http: false`）：要求 `worker_num: 1`，暂不支持 redis。
-  - 无状态（`stateless_http: true`）：支持多进程，但不支持 `list_roots` 调用。
-- **`list_roots` 支持条件**：SSE 模式都支持；Streamable-HTTP 必须 `stateless_http: false` 且 `worker_num: 1`。
-- **不支持 stdio 传输**（配了会直接报错）。
+The process model comes from `global.processmodel` in the framework YAML. In every model, **each service process has exactly one MCP app and one uvicorn**: uvicorn runs on its own daemon thread and binds every `http_mcp` port owned by that process with `SO_REUSEPORT`.
 
-## 目录参考
+| Model | YAML | Where MCP / uvicorn runs |
+|---|---|---|
+| merge, single loop (default) | `processmodel` omitted | 1 in the main process |
+| merge, multi-thread | `mode: single_process`, `io_num` / `handle_num` > 1 | 1 in the main process (started by serving thread 0; other threads do not start another) |
+| separate | `mode: multi_process`, `io_handle_type: separate`, `handle_num: N` | 1 per rpc task process; the I/O process does not listen on `http_mcp` ports |
+| peer | `mode: multi_process`, `io_handle_type: peer` (or `merge`), `handle_num: N` | 1 per peer worker process |
 
-- `trpc_mcp/tools.py` / `resources.py` / `prompts.py`：能力注册装饰器与注册表。
-- `trpc_mcp/_trpc_mcp_server.py`：`TrpcMcpServer`（继承 `FastMCP`），含 service 隔离、tool filter、call_tool 等。
-- `trpc_mcp/_trpc_server_transport.py`：接入 trpc server 的服务端传输，注册能力到 FastMCP。
-- `trpc_mcp/_sse_transport.py`：SSE 传输（含多 worker redis 同步）。
-- `trpc_mcp/mcp_client.py`：客户端 `McpProxy`。
-- `trpc_mcp/_httpx_transport.py`：把官方 MCP SDK 的 httpx 请求桥接到 trpc 客户端（含 streamable 传输版本自适应）。
-- `trpc_mcp/_codec.py`：`http_mcp` 协议的客户端/服务端编解码。
-- `trpc_mcp/_compat.py`：可选 `mcp.types` 符号（如 `Icon`）的版本兼容垫片。
-- `trpc_mcp/mcp_api.py` / `utils.py`：上下文读取与 HTTP 头/参数注入等工具。
-- `examples/`：完整可运行示例，见 [`examples/README.md`](examples/README.md)。
-- `docs/troubleshooting.md`：排障备忘；`docs/compatibility_old_vs_new.md`：新旧实现兼容性对比。
+```yaml
+global:
+  processmodel:
+    mode: multi_process
+    io_handle_type: separate
+    handle_num: 2          # 0 means the CPU count
+```
 
-## 常见问题
+**Automatic process-count adjustment**: under separate / peer, when the process count is greater than 1, `register_trpc_mcp_server` sets the process count to 1 before fork and logs a warning if `plugins.mcp.server.redis` is missing or `settings.stateless_http` is `false`. An MCP session is in-process state, so multiple processes require both “redis for SSE session sync” and “stateless HTTP”. Merge mode is unaffected.
 
-### 客户端 `protocol` 配成 `http` 可以吗？
+**Graceful shutdown**: after SIGTERM, the framework `exit_callbacks` stop uvicorn from accepting new connections and start graceful shutdown (timeout is the framework drain time). `post_drain_callbacks` then wait for the uvicorn thread to finish (drain time + 2 seconds; a timeout logs a warning).
 
-建议统一用 `http_mcp`。若客户端或自定义 selector 退回成普通 `http`，会把 MCP 专用 codec 降级，导致 SSE POST 的 `202 ACCEPTED` 被当成错误。`McpProxy` 内部会强制 `http_mcp`，但 selector 返回的 `node.protocol` 仍需是 `http_mcp`。
+**Limits**:
 
-### 为什么 streamable-http 测 `list_roots` 失败？
+- The uvicorn event loop sits outside the SDK thread model: MCP requests run server filters and capability functions on the uvicorn thread. They do not occupy framework handle threads and are not covered by its queueing or overload protection.
+- When an MCP capability function calls downstream with a trpc client, that client connection belongs to the uvicorn thread's loop. Do not reuse an HTTP client session created on another loop.
 
-`list_roots` 是服务端反向请求客户端，依赖有状态 session。Streamable-HTTP 下必须 `stateless_http: false` 且 `worker_num: 1`；stateless 或多 worker 会拿不到同一个 session。SSE 模式不受此限制。
+## Notes
 
-### sse 协议下，多 worker 为什么必须配 redis？
+- **Protocol**: both server and client use `http_mcp` for `protocol`. A custom selector must also return `node.protocol` as `http_mcp`, or the codec is downgraded.
+- **base_url**: client and server must match, or path joining returns 404.
+- **SSE**: a single process is enough. Multiple processes (separate / peer) must configure redis and `stateless_http: true`, otherwise the process count is reduced to 1 (see “Process and thread model” above).
+- **Streamable-HTTP**:
+  - Stateful (`stateless_http: false`): single process only. redis is not supported yet.
+  - Stateless (`stateless_http: true`): multiple processes are supported, but `list_roots` is not.
+- **`list_roots`**: supported in every SSE setup. Streamable-HTTP requires `stateless_http: false` and a single process.
+- **stdio is not supported** (configuring it raises immediately).
 
-`sse-starlette` 的 session 是进程内状态。多 worker 时 POST 命中的 worker 与持有 SSE 长连接的 worker 可能不是同一个，需要 redis 做跨 worker 的消息/会话同步。
+## Layout
 
-### 装了较低版本的 mcp，新特性会报错吗？
+- `trpc_mcp/tools.py` / `resources.py` / `prompts.py`: capability decorators and registries.
+- `trpc_mcp/_trpc_mcp_server.py`: `TrpcMcpServer` (subclasses `FastMCP`), including service isolation, tool filter, and `call_tool`.
+- `trpc_mcp/_trpc_server_transport.py`: the `http_mcp` protocol starter `start_mcp`. Per process it builds the MCP app, starts the uvicorn thread, and registers graceful-shutdown callbacks.
+- `trpc_mcp/service_desc.py`: `register_trpc_mcp_server`, which adjusts the process count for the process model.
+- `trpc_mcp/_sse_transport.py`: SSE transport (including multi-process redis sync).
+- `trpc_mcp/mcp_client.py`: client `McpProxy`.
+- `trpc_mcp/_httpx_transport.py`: bridges official MCP SDK httpx requests to the trpc client (including streamable-transport version adaptation).
+- `trpc_mcp/_codec.py`: client and server codec for the `http_mcp` protocol.
+- `trpc_mcp/_compat.py`: version-compatibility shim for optional `mcp.types` symbols (such as `Icon`).
+- `trpc_mcp/mcp_api.py` / `utils.py`: context readers and helpers for injecting HTTP headers and parameters.
+- `examples/`: runnable examples, see [`examples/README.md`](examples/README.md).
+- `docs/troubleshooting.md`: troubleshooting notes; `docs/compatibility_old_vs_new.md`: compatibility comparison of the old and new implementations.
 
-不会。`icons`/`meta`/resource `annotations`、`call_tool(meta=)` 等是较高版本才有的；trpc-mcp 按已安装 SDK 的签名做自适应过滤，低版本会自动忽略并打印告警，不会抛 `TypeError`。详见 `docs/troubleshooting.md`。
+## FAQ
+
+### Can the client `protocol` be `http`?
+
+Use `http_mcp` everywhere. If the client or a custom selector falls back to plain `http`, the MCP codec is downgraded and an SSE POST `202 ACCEPTED` is treated as an error. `McpProxy` forces `http_mcp` internally, but `node.protocol` returned by a selector still has to be `http_mcp`.
+
+### Why does `list_roots` fail on streamable-http?
+
+`list_roots` is a server-initiated request back to the client and needs a stateful session. Under Streamable-HTTP it requires `stateless_http: false` and a single process. Stateless mode or multiple processes cannot reach the same session. SSE does not have this limit.
+
+### Why does multi-process SSE require redis?
+
+Sessions in `sse-starlette` are in-process state. With multiple processes, the process that receives the POST may not be the process holding the SSE connection, so redis is required to sync messages and sessions across processes.
+
+### Will new features raise if an older mcp is installed?
+
+No. `icons` / `meta` / resource `annotations`, `call_tool(meta=)`, and similar APIs exist only in newer versions. trpc-mcp filters arguments against the installed SDK signature. Older versions ignore them and log a warning instead of raising `TypeError`. See `docs/troubleshooting.md`.

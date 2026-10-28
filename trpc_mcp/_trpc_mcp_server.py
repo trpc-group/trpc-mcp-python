@@ -1,13 +1,14 @@
-# -*- coding: utf-8 -*-
+# Tencent is pleased to support the open source community by making tRPC-MCP-Python available.
 #
-# Copyright @ 2025 Tencent.com
+# Copyright (C) 2026 Tencent. All rights reserved.
+#
+# tRPC-MCP-Python is licensed under Apache-2.0.
 """TRPC MCP Server Adapter Module."""
 
 import base64
 import inspect
 import json
 import re
-import time
 from contextvars import ContextVar
 from functools import wraps
 from typing import Any
@@ -34,17 +35,23 @@ from starlette.types import Receive
 from starlette.types import Scope
 from starlette.types import Send
 
-from trpc.codec.message import get_message
-from trpc.codec.serialization import SerializationType
-from trpc.config import config
-from trpc.context import TrpcContext
-from trpc.http import defines as http_defines
-from trpc.http import pop_http_rsp_header
-from trpc.log import logger
 from mcp.server.lowlevel.server import request_ctx
-from trpc.trpc_abc.transport import BaseServerTransportOption
-from trpc.trpcpb import RequestProtocol
-from trpc.trpcpb import TRPC_DYEING_MESSAGE
+from trpc_sdk._inner import trpc_pb2
+from trpc_sdk.abc import BaseServerTransportOption
+from trpc_sdk.abc import TrpcContext
+from trpc_sdk.abc import TrpcMessage
+from trpc_sdk.abc import get_message
+from trpc_sdk.config import TrpcConfig
+from trpc_sdk.http import HTTP_REQ_KEY
+from trpc_sdk.http import HTTP_RSP_KEY
+from trpc_sdk.http import HTTP_TRPC_HEADER
+from trpc_sdk.http import LOCAL_ADDR
+from trpc_sdk.http import TRANS_INFO_BASE64_KEY
+from trpc_sdk.http import find_serialization_type
+from trpc_sdk.http import pop_http_rsp_header
+from trpc_sdk.log import logger
+from trpc_sdk.serialization import SerializationType
+from trpc_sdk.utils import now_ms
 
 from ._compat import Annotations
 from ._compat import Icon
@@ -155,13 +162,14 @@ class _TrpcFilterASGIApp:
 
     def _make_trpc_context(self, request: Request) -> TrpcContext:
         opts = self._get_opts(request)
+        response = Response()
         trpc_context = TrpcContext()
-        trpc_context.timeout = opts.idle_timeout
-        trpc_context.recv_time = int(time.time() * 1000)
-        trpc_context.with_meta_data(http_defines.HTTP_REQ_KEY, request)
-        trpc_context.with_meta_data(http_defines.HTTP_RSP_KEY, Response())
-        trpc_context.with_meta_data(http_defines.LOCAL_ADDR, f"{opts.address}:{opts.port}")
-        trpc_context.with_meta_data(http_defines.TRANS_INFO_BASE64_KEY, config.global_config_obj.server.encode_base64)
+        trpc_context.timeout = int(opts.idle_timeout or 0)
+        trpc_context.recv_time = now_ms()
+        trpc_context.with_meta_data(HTTP_REQ_KEY, request)
+        trpc_context.with_meta_data(HTTP_RSP_KEY, response)
+        trpc_context.with_meta_data(LOCAL_ADDR, f"{opts.address[0]}:{opts.port}")
+        trpc_context.with_meta_data(TRANS_INFO_BASE64_KEY, TrpcConfig.server_config().encode_base64)
         trpc_context.with_meta_data(SERVER_NAME, opts.service_name)
         trpc_context.with_meta_data(PROTOCOL_NAME, opts.service.opt.protocol)
         trpc_context.with_meta_data(MCP_APP, self._mcp_app)
@@ -169,30 +177,34 @@ class _TrpcFilterASGIApp:
             trpc_context.remote_ip = request.client.host
 
         message = get_message(trpc_context)
-        self._decode_trpc_req_header(message, request)
+        # ``handle_http`` hands ``server_raw_req`` to the filters, and the codec
+        # writes error status/headers onto ``server_raw_rsp``.
+        message.set_server_raw_req(request)
+        message.set_server_raw_rsp(response)
+        self._decode_trpc_req_header(trpc_context, message, request)
         request.scope["trpc_context"] = trpc_context
         return trpc_context
 
     @staticmethod
-    def _decode_trpc_req_header(message, request: Request) -> None:
+    def _decode_trpc_req_header(ctx: TrpcContext, message: TrpcMessage, request: Request) -> None:
         """Decode TRPC headers from a Starlette request without consuming the body."""
-        trpc_req = RequestProtocol()
+        trpc_req = trpc_pb2.RequestProtocol()
         headers = request.headers
 
-        trpc_req.version = int(headers.get(http_defines.HTTP_TRPC_HEADER.trpc_version, trpc_req.version))
-        trpc_req.call_type = int(headers.get(http_defines.HTTP_TRPC_HEADER.trpc_call_type, trpc_req.call_type))
-        trpc_req.message_type = int(headers.get(http_defines.HTTP_TRPC_HEADER.trpc_message_type, trpc_req.message_type))
-        trpc_req.request_id = int(headers.get(http_defines.HTTP_TRPC_HEADER.trpc_request_id, trpc_req.request_id))
+        trpc_req.version = int(headers.get(HTTP_TRPC_HEADER.trpc_version, trpc_req.version))
+        trpc_req.call_type = int(headers.get(HTTP_TRPC_HEADER.trpc_call_type, trpc_req.call_type))
+        trpc_req.message_type = int(headers.get(HTTP_TRPC_HEADER.trpc_message_type, trpc_req.message_type))
+        trpc_req.request_id = int(headers.get(HTTP_TRPC_HEADER.trpc_request_id, trpc_req.request_id))
         message.set_request_id(trpc_req.request_id)
 
-        trpc_req.timeout = int(headers.get(http_defines.HTTP_TRPC_HEADER.trpc_timeout, trpc_req.timeout))
+        trpc_req.timeout = int(headers.get(HTTP_TRPC_HEADER.trpc_timeout, trpc_req.timeout))
         message.set_timeout(trpc_req.timeout)
 
-        caller_method = headers.get(http_defines.HTTP_TRPC_HEADER.trpc_caller_method)
+        caller_method = headers.get(HTTP_TRPC_HEADER.trpc_caller_method)
         if caller_method:
             message.set_caller_method(caller_method)
 
-        caller = headers.get(http_defines.HTTP_TRPC_HEADER.trpc_caller, None)
+        caller = headers.get(HTTP_TRPC_HEADER.trpc_caller, None)
         if caller:
             trpc_req.caller = caller.encode("utf-8")
             message.set_caller_service_name(caller)
@@ -203,15 +215,15 @@ class _TrpcFilterASGIApp:
         path = url_path.split("/")
         callee = path[1] if len(path) > 1 else None
 
-        trpc_callee = headers.get(http_defines.HTTP_TRPC_HEADER.trpc_callee, callee)
+        trpc_callee = headers.get(HTTP_TRPC_HEADER.trpc_callee, callee)
         if trpc_callee:
             trpc_req.callee = trpc_callee.encode("utf-8")
             message.set_callee_service_name(trpc_callee)
 
-        message.set_dyeing((trpc_req.message_type & TRPC_DYEING_MESSAGE) != 0)
+        message.set_dyeing((trpc_req.message_type & trpc_pb2.TRPC_DYEING_MESSAGE) != 0)
 
-        trans_info = headers.get(http_defines.HTTP_TRPC_HEADER.trpc_trans_info, None)
-        is_base64 = message.context.get_meta_data(http_defines.TRANS_INFO_BASE64_KEY, False)
+        trans_info = headers.get(HTTP_TRPC_HEADER.trpc_trans_info, None)
+        is_base64 = ctx.get_meta_data(TRANS_INFO_BASE64_KEY, False)
         if trans_info:
             trans_info = json.loads(trans_info)
             if is_base64:
@@ -233,7 +245,7 @@ class _TrpcFilterASGIApp:
         else:
             message.set_serialization_type(SerializationType.JSON)
             content_type = request.headers.get("Content-Type", "")
-            serialization_type = http_defines.find_serialization_type(content_type, SerializationType.JSON)
+            serialization_type = find_serialization_type(content_type, SerializationType.JSON)
             message.set_serialization_type(serialization_type)
             trpc_req.content_type = serialization_type
 
@@ -279,10 +291,14 @@ class _TrpcFilterASGIApp:
                 _TRPC_CONTEXT.reset(token)
 
         opts = self._get_opts(request)
-        result = await opts.service.http_handle(trpc_context, mcp_handle)
+        result = await opts.service.handle_http(trpc_context, mcp_handle)
         if result is not None and not response_started:
-            headers = pop_http_rsp_header(trpc_context)
-            response = Response(content=result, headers=headers)
+            # On a filter error the codec put the status and tRPC error headers
+            # on ``server_raw_rsp``; carry them over to the response sent.
+            raw_rsp = get_message(trpc_context).server_raw_rsp
+            headers = {key: value for key, value in raw_rsp.headers.items() if key.lower() != "content-length"}
+            headers.update(pop_http_rsp_header(trpc_context) or {})
+            response = Response(content=result, status_code=raw_rsp.status_code, headers=headers)
             await response(scope, receive, send)
 
 

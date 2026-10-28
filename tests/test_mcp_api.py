@@ -1,4 +1,8 @@
-# -*- coding: utf-8 -*-
+# Tencent is pleased to support the open source community by making tRPC-MCP-Python available.
+#
+# Copyright (C) 2026 Tencent. All rights reserved.
+#
+# tRPC-MCP-Python is licensed under Apache-2.0.
 """Tests for trpc_mcp.mcp_api."""
 
 import types
@@ -6,10 +10,14 @@ import types
 import pytest
 from mcp.server.streamable_http import EventStore
 from mcp.types import CallToolResult
-from trpc.context import TrpcContext
-from trpc.http import defines as http_defines
+from starlette.requests import Request
+from trpc_sdk.abc import TrpcContext
+from trpc_sdk.http import HTTP_REQ_KEY
+from trpc_sdk.http import HTTP_RSP_KEY
+from trpc_sdk.http import LOCAL_ADDR
 
 from trpc_mcp import mcp_api
+from trpc_mcp._trpc_mcp_server import MCP_APP
 from trpc_mcp._config import McpServerOptions, get_mcp_server_options, set_mcp_server_options
 
 
@@ -34,6 +42,13 @@ class TestServerAccessors:
 
     def test_get_mcp_server(self, patched_app):
         assert mcp_api.get_mcp_server(TrpcContext()) is patched_app
+        assert mcp_api.get_mcp_server() is patched_app
+
+    def test_get_mcp_server_prefers_ctx_app(self, patched_app):
+        ctx = TrpcContext()
+        ctx_app = _FakeServer()
+        ctx.with_meta_data(MCP_APP, ctx_app)
+        assert mcp_api.get_mcp_server(ctx) is ctx_app
 
     def test_get_trpc_mcp_server_name(self, patched_app):
         assert mcp_api.get_trpc_mcp_server_name(TrpcContext()) == "fake-mcp"
@@ -48,19 +63,21 @@ class TestHttpAccessors:
         ctx = TrpcContext()
         req = object()
         rsp = object()
-        ctx.with_meta_data(http_defines.HTTP_REQ_KEY, req)
-        ctx.with_meta_data(http_defines.HTTP_RSP_KEY, rsp)
+        ctx.with_meta_data(HTTP_REQ_KEY, req)
+        ctx.with_meta_data(HTTP_RSP_KEY, rsp)
         assert mcp_api.get_http_req(ctx) is req
         assert mcp_api.get_http_rsp(ctx) is rsp
 
     def test_get_server_addr_from_meta(self):
         ctx = TrpcContext()
-        ctx.with_meta_data(http_defines.LOCAL_ADDR, "10.0.0.1:80")
+        ctx.with_meta_data(LOCAL_ADDR, "10.0.0.1:80")
         assert mcp_api.get_server_addr(ctx) == "10.0.0.1:80"
 
     def test_get_server_addr_fallback_to_request_host(self):
         ctx = TrpcContext()
-        ctx.with_meta_data(http_defines.HTTP_REQ_KEY, types.SimpleNamespace(host="host:9000"))
+        request = Request({"type": "http", "method": "GET", "path": "/sse", "query_string": b"",
+                           "headers": [(b"host", b"host:9000")], "server": ("127.0.0.1", 9000), "scheme": "http"})
+        ctx.with_meta_data(HTTP_REQ_KEY, request)
         assert mcp_api.get_server_addr(ctx) == "host:9000"
 
     def test_get_remote_addr(self):

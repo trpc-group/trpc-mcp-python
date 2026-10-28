@@ -12,10 +12,9 @@
 #   ./run_examples.sh tool            # run a single example (tool/prompt/resource/...)
 #   ./run_examples.sh tool <conf>     # run one example against a specific config (server + client)
 #   ./run_examples.sh streamable      # run the core examples against streamable-http
-#   ./run_examples.sh polaris         # run the polaris example (needs an external Polaris registry)
 #   ./run_examples.sh list            # list available example names
 #
-# Available examples: tool prompt resource structured_output icons_meta roots selector mixed polaris
+# Available examples: tool prompt resource structured_output icons_meta roots selector mixed
 set -u
 
 # pip3 install -r requirements.txt
@@ -50,9 +49,8 @@ declare -A CLIENT=(
   [roots]="test_mcp/test_trpc_mcp_roots.py|trpc_python.yaml"
   [selector]="test_mcp/test_trpc_mcp_selector.py|conf/trpc_python_selector.yaml"
   [mixed]="test_mcp/test_trpc_mcp_mixed_protocol.py|conf/trpc_python_mixed.yaml"
-  # [polaris]="test_mcp/test_trpc_mcp_polaris.py|conf/trpc_python_polaris.yaml"
 )
-# Examples run by "all" (polaris needs external infra, so it is opt-in only).
+# Examples run by "all".
 DEFAULT_ORDER=(tool prompt resource structured_output icons_meta roots selector mixed)
 
 # ---------------------------------------------------------------------------

@@ -1,17 +1,19 @@
-# -*- coding: utf-8 -*-
+# Tencent is pleased to support the open source community by making tRPC-MCP-Python available.
 #
-# Copyright @ 2025 Tencent.com
+# Copyright (C) 2026 Tencent. All rights reserved.
+#
+# tRPC-MCP-Python is licensed under Apache-2.0.
 """MCP Resource Callback Implementations.
 
 This module contains resource handler implementations for MCP protocol.
 Each function is decorated with @trpc_mcp.resource to register it as a resource handler.
 """
-from trpc.context import TrpcContext
+from trpc_sdk.abc import TrpcContext
 
 import trpc_mcp
 
-# 如果 'echo://static' 绑定到 'trpc.test.mcp.Greeter1' 在 'trpc.test.mcp.Greeter2'
-# 也可以匹配
+# echo://static is bound to trpc.test.mcp.Greeter1 and can also match on
+# trpc.test.mcp.Greeter2.
 
 
 @trpc_mcp.resource(uri="echo://static",

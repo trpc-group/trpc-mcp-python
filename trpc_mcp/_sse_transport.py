@@ -1,4 +1,8 @@
-# -*- coding: utf-8 -*-
+# Tencent is pleased to support the open source community by making tRPC-MCP-Python available.
+#
+# Copyright (C) 2026 Tencent. All rights reserved.
+#
+# tRPC-MCP-Python is licensed under Apache-2.0.
 """SSE transport extensions for TRPC MCP."""
 
 import json
@@ -29,12 +33,12 @@ from starlette.types import Receive
 from starlette.types import Scope
 from starlette.types import Send
 
-from trpc.codec.message import get_message
-from trpc.context import TrpcContext
-from trpc.log import logger
-from trpc.naming.option import SelectorOption
-from trpc.naming.trpc_selector import get_selector
-from trpc.trpc_abc.node import Node
+from trpc_sdk.abc import Node
+from trpc_sdk.abc import SelectorOption
+from trpc_sdk.abc import TrpcContext
+from trpc_sdk.abc import get_message
+from trpc_sdk.log import logger
+from trpc_sdk.naming import get_selector
 
 from ._constants import HOST
 from ._constants import HTTP_HEADERS
@@ -101,6 +105,8 @@ class TrpcSseServerTransport(SseServerTransport):
         target = self._redis_conf.pop(TARGET)
         result: ParseResult = urlparse(target)
         selector = get_selector(result.scheme)
+        if selector is None:
+            raise ValueError(f"No selector registered for redis target {target}")
         options = self._parse_dict_to_selector_option(ctx)
         node: Node = await selector.select(result.netloc, options)
         if node is None:

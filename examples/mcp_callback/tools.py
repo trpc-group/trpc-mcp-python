@@ -1,6 +1,8 @@
-# -*- coding: utf-8 -*-
+# Tencent is pleased to support the open source community by making tRPC-MCP-Python available.
 #
-# Copyright @ 2025 Tencent.com
+# Copyright (C) 2026 Tencent. All rights reserved.
+#
+# tRPC-MCP-Python is licensed under Apache-2.0.
 """MCP Tool Callback Implementations.
 
 This module contains tool handler implementations for MCP protocol.
@@ -17,7 +19,7 @@ from typing import Annotated
 
 from pydantic import BaseModel, Field
 import mcp.types as types
-from trpc.context import TrpcContext
+from trpc_sdk.abc import TrpcContext
 
 import trpc_mcp
 
@@ -46,9 +48,9 @@ async def _allowed_directories(ctx: TrpcContext) -> list[types.TextContent]:
     return [types.TextContent(type="text", text=f"Allowed directories:\n{os.linesep.join(allowed_dirs)}")]
 
 
-# 不指定 mcp_name 时会注册到所有配置的 MCP service。
-# 适用场景：server 端 tool 需要访问本地文件、目录索引或代码仓库等客户端资源前，
-# 先通过 MCP Roots 能力询问客户端允许访问哪些根目录，避免服务端自行假设可访问范围。
+# Omit mcp_name to register on every configured MCP service.
+# Before a server tool reads client files, a directory index, or a repository,
+# ask the client which roots it allows via MCP Roots instead of assuming a scope.
 @trpc_mcp.tool(name="allowed_directories",
                description="List root directories allowed by the MCP client",
                structured_output=False)
@@ -75,7 +77,7 @@ def get_weather(ctx: TrpcContext, city: str) -> WeatherData:
     return WeatherData(temperature=22.5, humidity=65.0, condition="partly cloudy", wind_speed=12.3, location=city)
 
 
-# 绑定到 trpc.test.mcp.Greeter1
+# Bound to trpc.test.mcp.Greeter1
 @trpc_mcp.tool(name="echo_tool",
                description="echo some text",
                structured_output=True,
@@ -104,7 +106,7 @@ async def echo_tool(ctx: TrpcContext, text: str) -> str:
     return info
 
 
-# 绑定到 trpc.test.mcp.Greeter1
+# Bound to trpc.test.mcp.Greeter1
 @trpc_mcp.tool(name="show_tool", description="show some text", mcp_name="trpc.test.mcp.Greeter1")
 def show_tool(ctx: TrpcContext, text: str) -> str:
     """Display tool that shows input text with server metadata.
@@ -124,7 +126,7 @@ def show_tool(ctx: TrpcContext, text: str) -> str:
     return info
 
 
-# 绑定到 trpc.test.mcp.Greeter2
+# Bound to trpc.test.mcp.Greeter2
 @trpc_mcp.tool(name="shell_tool", description="exec shell", mcp_name="trpc.test.mcp.Greeter2")
 def shell_tool(ctx: TrpcContext, cmd: str) -> str:
     """Execute shell command and return results.
@@ -170,9 +172,9 @@ def common_tool(ctx: TrpcContext, text: str) -> types.CallToolResult:
     return res
 
 
-# 不指定 mcp_name -> 注册到所有 service（公共工具）。
-# 用途：回显客户端通过 set_http_header_to_context 设置的 HTTP 头部，用来验证
-# 客户端自定义头部确实透传到了服务端（SSE 与 streamable-http 均可验证）。
+# Omit mcp_name to register on every service (shared tool).
+# Echoes the HTTP header the client set with set_http_header_to_context, so you
+# can confirm custom headers reach the server on SSE and streamable-http.
 @trpc_mcp.tool(name="echo_header", description="Echo back a client-sent HTTP header for verification")
 def echo_header(ctx: TrpcContext, key: str) -> str:
     """Return the value of an incoming HTTP header named ``key``.
@@ -188,10 +190,12 @@ def echo_header(ctx: TrpcContext, key: str) -> str:
     return info
 
 
-# 演示 icons / meta（FastMCP 1.13+/1.16+ 才支持，trpc-mcp 已做版本自适应透传）。
-# - icons: 给 tool 关联展示用图标（SEP-973），客户端 list_tools 时拿得到。
-# - meta:  附带任意机器可读元数据（如 OpenAI Apps 约定），随 tool 定义返回。
-# 不指定 mcp_name -> 注册到所有 service。
+# Demo of icons / meta. FastMCP 1.13+/1.16+ supports them; trpc-mcp forwards
+# the fields when the installed version provides them.
+# - icons: display icons for the tool (SEP-973), returned by list_tools.
+# - meta:  arbitrary machine-readable metadata (for example OpenAI Apps
+#   conventions), returned with the tool definition.
+# Omit mcp_name to register on every service.
 @trpc_mcp.tool(name="branded_tool",
                title="Branded Echo",
                description="Echo text; also carries icons + meta to demo MCP metadata passthrough",
@@ -207,7 +211,7 @@ def branded_tool(ctx: TrpcContext, text: str) -> str:
     return info
 
 
-# 不指定 mcp_name, 默认指定到所以配置的mcp中
+# Omit mcp_name to register on every configured MCP service.
 @trpc_mcp.tool(name="add", description="add tool")
 def add(ctx: TrpcContext, a: Annotated[int, Field(description="The first integer addend.")],
         b: Annotated[int, Field(description="The second integer addend.")]) -> int:

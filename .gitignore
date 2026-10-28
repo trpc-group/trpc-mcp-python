@@ -20,4 +20,3 @@ cov.tmp
 coverage.xml
 test-ngtest-ut-trpc_mcp.xml
 .pytest_cache
-.codebuddy

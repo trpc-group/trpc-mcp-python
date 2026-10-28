@@ -1,4 +1,8 @@
-# -*- coding: utf-8 -*-
+# Tencent is pleased to support the open source community by making tRPC-MCP-Python available.
+#
+# Copyright (C) 2026 Tencent. All rights reserved.
+#
+# tRPC-MCP-Python is licensed under Apache-2.0.
 """This is server module"""
 
 import os
@@ -6,8 +10,8 @@ import sys
 import argparse
 from typing import List
 
-import trpc
-from trpc.log import logger
+from trpc_sdk.log import logger
+from trpc_sdk.server import create_server
 
 # add the stub to the path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "mcp_callback")))  # noqa
@@ -16,18 +20,15 @@ if __name__ != '__main__':  # noqa
 
 # import sdk and plugins
 # pylint: disable=unused-import
-import trpc_naming_polaris as _
 import trpc_mcp
-# DO NOT remove the plugin below!
-# import trpc_metrics_runtime as _
 # pylint: enable=unused-import
 
 from mcp_callback import tools as _
 from mcp_callback import resources as _
 from mcp_callback import prompts as _
 from filters import EchoToolFilter as _
-# 普通 trpc HTTP 服务路由（仅当某个 service 以 protocol: http 监听时才生效）。
-# 导入即注册；在纯 http_mcp 配置下不会绑定到任何监听，无副作用。
+# Plain trpc HTTP routes. They bind only when a service listens with protocol: http.
+# Importing registers them; a pure http_mcp config attaches them to no listener.
 import http_service as _
 
 # argparse parser
@@ -67,7 +68,7 @@ def serve(conf_path: str):
     :param conf_path: configuration file path
     """
 
-    svr = trpc.new(conf_path)
+    svr = create_server(conf_path)
 
     trpc_mcp.register_trpc_mcp_server(svr, None)
 

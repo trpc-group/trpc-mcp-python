@@ -1,6 +1,8 @@
-# -*- coding: utf-8 -*-
+# Tencent is pleased to support the open source community by making tRPC-MCP-Python available.
 #
-# Copyright @ 2025 Tencent.com
+# Copyright (C) 2026 Tencent. All rights reserved.
+#
+# tRPC-MCP-Python is licensed under Apache-2.0.
 """Standalone example: tool **icons / meta** metadata through trpc-mcp.
 
 What this file demonstrates
@@ -50,16 +52,15 @@ import sys
 
 from mcp.types import CallToolResult
 
-from trpc.client.options import with_namespace
-from trpc.client.options import with_protocol
-from trpc.config import config as trpc_config
-from trpc.context import TrpcContext
-from trpc.plugin import plugin as trpc_plugin
+from trpc_sdk.client import Options
+from trpc_sdk.config import TrpcConfig
+from trpc_sdk.abc import TrpcContext
+from trpc_sdk.plugin import init_plugins
 
 import trpc_mcp
 
 # Importing the filters package registers the client filter and the custom "test"
-# selector referenced by the example configs. Must happen before trpc_plugin.setup().
+# selector referenced by the example configs. Must happen before init_plugins().
 CURRENT_DIR = pathlib.Path(__file__).parent
 sys.path.append(str(CURRENT_DIR.parent))
 import filters as _
@@ -81,7 +82,7 @@ def tool_text(result: CallToolResult) -> list[str]:
 async def run(service_name: str) -> None:
     proxy = trpc_mcp.McpProxy(
         name=service_name,
-        options=[with_protocol("http_mcp"), with_namespace("Development")],
+        options=[Options().set_protocol("http_mcp").set_namespace("Development")],
     )
     try:
         await proxy.initialize(new_ctx())
@@ -116,8 +117,8 @@ async def main() -> None:
     parser.add_argument("--service", default=DEFAULT_SERVICE, help="client.service name to call.")
     args = parser.parse_args()
 
-    trpc_config.load_global_config(args.conf, "utf-8")
-    trpc_plugin.setup()
+    TrpcConfig.load(args.conf)
+    init_plugins()
     await run(args.service)
 
 

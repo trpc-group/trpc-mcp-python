@@ -1,31 +1,33 @@
-# -*- coding: utf-8 -*-
+# Tencent is pleased to support the open source community by making tRPC-MCP-Python available.
 #
-# Copyright @ 2025 Tencent.com
-"""Standalone example: **不同协议的 service 在同一进程内共存**。
+# Copyright (C) 2026 Tencent. All rights reserved.
+#
+# tRPC-MCP-Python is licensed under Apache-2.0.
+"""Standalone example: services of different protocols coexist in one process.
 
-测什么
-------
-同一个 trpc server 进程里同时跑两个 service：
+What it checks
+--------------
+One trpc server process runs two services at once:
 
-- ``trpc.test.mcp.Greeter1``：``protocol: http_mcp`` —— MCP 服务，用 ``McpProxy`` 调用。
-- ``trpc.test.mcp.Greeter2``：``protocol: http``     —— 普通 HTTP 服务，用 trpc HTTP 客户端调用。
+- ``trpc.test.mcp.Greeter1``: ``protocol: http_mcp`` -- MCP service, called with ``McpProxy``.
+- ``trpc.test.mcp.Greeter2``: ``protocol: http``     -- plain HTTP service, called with the trpc HTTP client.
 
-目的：验证 ``http_mcp`` 的专用 codec 是隔离的，**不会影响普通 ``http`` 服务**，
-两种协议可以在同一进程同时正常工作。
+The ``http_mcp`` codec is isolated and does not affect the plain ``http`` service,
+so both protocols work in the same process.
 
-依赖的服务端
-------------
-- 配置：``examples/conf/trpc_python_mixed.yaml``（Greeter1=http_mcp，Greeter2=http）。
-- 普通 HTTP 路由：``examples/http_service/handlers.py`` 的 ``/ping`` 与 ``/echo``
-  （绑定到 Greeter2），由 ``trpc_main.py`` 导入注册。
+Required server
+---------------
+- Config: ``examples/conf/trpc_python_mixed.yaml`` (Greeter1=http_mcp, Greeter2=http).
+- Plain HTTP routes: ``/ping`` and ``/echo`` in ``examples/http_service/handlers.py``
+  (bound to Greeter2), registered by importing them from ``trpc_main.py``.
 
 How to run
 ----------
-    # 终端 1：起服务（混合协议）
+    # Terminal 1: start the server (mixed protocols)
     venv/bin/python examples/trpc_main.py \
         --conf examples/conf/trpc_python_mixed.yaml
 
-    # 终端 2：跑本测试
+    # Terminal 2: run this example
     venv/bin/python examples/test_mcp/test_trpc_mcp_mixed_protocol.py \
         --conf examples/conf/trpc_python_mixed.yaml
 
@@ -34,19 +36,18 @@ Expected output (abridged)
     [http_mcp] trpc.test.mcp.Greeter1 add -> structured={'result': 3}
     [http]     trpc.test.mcp.Greeter2 GET  /ping  -> 200 {'protocol': 'http', ...}
     [http]     trpc.test.mcp.Greeter2 POST /echo  -> 200 {'protocol': 'http', 'echo': 'hi'}
-    [OK] http_mcp 与 http 两种协议在同一进程内均正常工作
+    [OK] http_mcp and http both work in the same process
 """
 import argparse
 import asyncio
 import pathlib
 import sys
 
-from trpc.client.options import with_namespace
-from trpc.client.options import with_protocol
-from trpc.config import config as trpc_config
-from trpc.context import TrpcContext
-from trpc.http.client import Client as HttpClient
-from trpc.plugin import plugin as trpc_plugin
+from trpc_sdk.client import Options
+from trpc_sdk.config import TrpcConfig
+from trpc_sdk.abc import TrpcContext
+from trpc_sdk.http import Client as HttpClient
+from trpc_sdk.plugin import init_plugins
 
 import trpc_mcp
 
@@ -54,20 +55,20 @@ CURRENT_DIR = pathlib.Path(__file__).parent
 sys.path.append(str(CURRENT_DIR.parent))
 
 # Importing the filters package registers the client filter referenced by the
-# example configs. Must happen before trpc_plugin.setup().
+# example configs. Must happen before init_plugins().
 import filters as _
 
 DEFAULT_CONF: str = str(CURRENT_DIR.parent / "conf" / "trpc_python_mixed.yaml")
 MCP_SERVICE: str = "trpc.test.mcp.Greeter1"  # protocol: http_mcp
 HTTP_SERVICE: str = "trpc.test.mcp.Greeter2"  # protocol: http
-HTTP_ADDR: str = "127.0.0.1:8009"  # Greeter2 监听地址
+HTTP_ADDR: str = "127.0.0.1:8009"  # Greeter2 listen address
 
 
 async def call_mcp() -> bool:
-    """调用 http_mcp 服务（MCP）。"""
+    """Call the http_mcp service."""
     proxy = trpc_mcp.McpProxy(
         name=MCP_SERVICE,
-        options=[with_protocol("http_mcp"), with_namespace("Development")],
+        options=[Options().set_protocol("http_mcp").set_namespace("Development")],
     )
     try:
         await proxy.initialize(TrpcContext())
@@ -79,7 +80,7 @@ async def call_mcp() -> bool:
 
 
 async def call_http() -> bool:
-    """调用普通 http 服务（trpc HTTP 客户端）。"""
+    """Call the plain HTTP service with the trpc HTTP client."""
     cli = HttpClient()
 
     get_rsp = await cli.get(TrpcContext(), f"http://{HTTP_ADDR}/ping?name=trpc-mcp")
@@ -109,8 +110,8 @@ async def main() -> None:
     parser.add_argument("--conf", default=DEFAULT_CONF, help="Path to the trpc config file.")
     args = parser.parse_args()
 
-    trpc_config.load_global_config(args.conf, "utf-8")
-    trpc_plugin.setup()
+    TrpcConfig.load(args.conf)
+    init_plugins()
     await run()
 
 

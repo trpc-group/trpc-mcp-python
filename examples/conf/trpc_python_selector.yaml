@@ -1,68 +1,67 @@
-global:                                           # 全局配置
-  namespace: Development                          # 环境类型，分正式 production 和非正式 development 两种类型
-  env_name: test                                  # 环境名称，非正式环境下多环境的名称
-  container_name:                                 # 容器名
-  local_ip:                                       # 宿主机 IP
+global:                                           # Global config
+  namespace: Development                          # Environment type: production or development
+  env_name: test                                  # Environment name used outside production
+  container_name:                                 # Container name
+  local_ip:                                       # Host IP
 
-server:                                           # 服务端配置
-  app: test                                       # 业务的应用名
-  server: mcp                                     # 进程服务名
-  bin_path: /usr/local/trpc/bin/                  # 二进制可执行文件和框架配置文件所在路径
-  conf_path: /usr/local/trpc/conf/                # 业务配置文件所在路径
-  data_path: /usr/local/trpc/data/                # 业务数据文件所在路径
-  worker_num: 1
+server:                                           # Server config
+  app: test                                       # Application name
+  server: mcp                                     # Process server name
+  bin_path: /usr/local/trpc/bin/                  # Path to binaries and framework config
+  conf_path: /usr/local/trpc/conf/                # Path to business config
+  data_path: /usr/local/trpc/data/                # Path to business data
   filter:
     - default
-  service:                                         #业务服务提供的 service，可以有多个
-    - name: trpc.test.mcp.Greeter1                 # service 的路由名称
-      ip: 127.0.0.1                               # 服务监听 ip 地址 可使用占位符 ${ip},ip 和 nic 二选一，优先 ip
-      port: 8008                                  # 服务监听端口 可使用占位符 ${port}
-      network: tcp                                # 网络监听类型 tcp udp
-      protocol: http_mcp                              # 应用层协议 trpc http
-      timeout: 1000000                            # 请求最长处理时间 单位 毫秒
-    - name: trpc.test.mcp.Greeter2                # service 的路由名称
-      ip: 127.0.0.1                               # 服务监听 ip 地址 可使用占位符 ${ip},ip 和 nic 二选一，优先 ip
-      port: 8009                                  # 服务监听端口 可使用占位符 ${port}
-      network: tcp                                # 网络监听类型 tcp udp
-      protocol: http_mcp                              # 应用层协议 trpc http
-      timeout: 1000000                            # 请求最长处理时间 单位 毫秒
+  service:                                         # Services exposed by this process; more than one is allowed
+    - name: trpc.test.mcp.Greeter1                 # Service route name
+      ip: 127.0.0.1                               # Listen IP. ${ip} is allowed; ip wins over nic
+      port: 8008                                  # Listen port. ${port} is allowed
+      network: tcp                                # Network type: tcp or udp
+      protocol: http_mcp                              # Application protocol: trpc or http
+      timeout: 1000000                            # Max request time, in milliseconds
+    - name: trpc.test.mcp.Greeter2                # Service route name
+      ip: 127.0.0.1                               # Listen IP. ${ip} is allowed; ip wins over nic
+      port: 8009                                  # Listen port. ${port} is allowed
+      network: tcp                                # Network type: tcp or udp
+      protocol: http_mcp                              # Application protocol: trpc or http
+      timeout: 1000000                            # Max request time, in milliseconds
 
-client:                                           # 客户端调用的后端配置
-  timeout: 1000000                                # 针对所有后端的请求最长处理时间
-  namespace: Development                          # 针对所有后端的环境
+client:                                           # Client backend config
+  timeout: 1000000                                # Max request time for every backend
+  namespace: Development                          # Namespace for every backend
   filter:
     - default
-  service:                                        # 针对单个后端的配置（McpProxy 按 name 自动加载）
-    - name: trpc.test.mcp.Greeter1                # 后端服务的 service name
-      target: http://127.0.0.1:8008                # 后端地址，ip:// 直连；polaris://service 走北极星
-      network: tcp                                # 后端服务的网络类型 tcp udp 配置优先
-      timeout: 1000000                            # 请求最长处理时间
-      protocol: http_mcp                          # 应用层协议（与服务端一致，便于多协议混跑）
-    - name: trpc.test.mcp.Greeter2                # 后端服务的 service name
-      target: http://127.0.0.1:8009                 # 后端地址
-      network: tcp                                # 后端服务的网络类型 tcp udp 配置优先
-      timeout: 1000000                            # 请求最长处理时间
-      protocol: http_mcp                          # 应用层协议（与服务端一致，便于多协议混跑）
+  service:                                        # Per-backend config (McpProxy loads it by name)
+    - name: trpc.test.mcp.Greeter1                # Backend service name
+      target: http://127.0.0.1:8008                # Backend address. ip:// is direct; custom schemes use registered selectors
+      network: tcp                                # Backend network type: tcp or udp; this config wins
+      timeout: 1000000                            # Max request time
+      protocol: http_mcp                          # Application protocol (match the server so protocols can be mixed)
+    - name: trpc.test.mcp.Greeter2                # Backend service name
+      target: http://127.0.0.1:8009                 # Backend address
+      network: tcp                                # Backend network type: tcp or udp; this config wins
+      timeout: 1000000                            # Max request time
+      protocol: http_mcp                          # Application protocol (match the server so protocols can be mixed)
 
 
-plugins:                                         # 插件配置
-  log:                                           # 日志配置
-    default:                                     # 默认日志的配置，可支持多输出
-      - writer: console                          # 控制台标准输出 默认
-        level: debug                             # 标准输出日志的级别
-      - writer: file                             # 本地文件日志
-        level: info                              # 本地文件滚动日志的级别
-        formatter: json                          # 标准输出日志的格式
+plugins:                                         # Plugin config
+  log:                                           # Log config
+    default:                                     # Default logger; multiple writers are allowed
+      - writer: console                          # Console stdout, the default writer
+        level: debug                             # Console log level
+      - writer: file                             # Local file log
+        level: info                              # Rolling file log level
+        formatter: json                          # Log format
         writer_config:
-          filename: ./trpc.log                      #本地文件滚动日志存放的路径
-          max_size: 10                              #本地文件滚动日志的大小 单位 MB
-          max_backups: 10                           #最大日志文件数
-          max_age: 7                                #最大日志保留天数
-          compress:  false                          #日志文件是否压缩
+          filename: ./trpc.log                      # Rolling log file path
+          max_size: 10                              # Rolling log size, in MB
+          max_backups: 10                           # Max number of log files
+          max_age: 7                                # Max log retention, in days
+          compress:  false                          # Whether to compress log files
   mcp:
-    client:                                      # MCP 客户端配置，McpProxy 示例会加载
-      transport: sse                             # 默认传输：sse / streamable-http
-      base_url:  /test                                # 服务端 base_url 前缀（与 server.base_url 一致），空表示根路径
+    client:                                      # MCP client config loaded by the McpProxy examples
+      transport: sse                             # Default transport: sse or streamable-http
+      base_url:  /test                                # Server base_url prefix (same as server.base_url); empty means root
     server:
       instructions: test1
       transport: sse

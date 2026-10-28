@@ -1,6 +1,8 @@
-# -*- coding: utf-8 -*-
+# Tencent is pleased to support the open source community by making tRPC-MCP-Python available.
 #
-# Copyright @ 2025 Tencent.com
+# Copyright (C) 2026 Tencent. All rights reserved.
+#
+# tRPC-MCP-Python is licensed under Apache-2.0.
 """
 TRPC MCP API Module
 
@@ -11,17 +13,19 @@ It includes server registration, configuration handling, and plugin setup functi
 from collections.abc import Callable
 from typing import Any, Type, Optional
 
-from aiohttp.web_request import Request
-from aiohttp.web_response import Response
-
 from mcp.server.streamable_http import EventStore
 from mcp.server.fastmcp.utilities.func_metadata import _convert_to_content
 from mcp.server.session import ServerSession
 from mcp.types import CallToolResult
+from starlette.requests import Request
+from starlette.responses import Response
 
-from trpc.context import TrpcContext
-from trpc.http import defines as http_defines
+from trpc_sdk.abc import TrpcContext
+from trpc_sdk.http import HTTP_REQ_KEY
+from trpc_sdk.http import HTTP_RSP_KEY
+from trpc_sdk.http import LOCAL_ADDR
 
+from ._trpc_mcp_server import MCP_APP
 from ._trpc_mcp_server import TrpcMcpServer
 from ._trpc_server_transport import register_mcp_app
 from ._config import get_mcp_server_options
@@ -32,11 +36,16 @@ def get_mcp_server(ctx: Optional[TrpcContext] = None) -> TrpcMcpServer:
     """Retrieve the MCP server instance from TRPC context.
 
     Args:
-        ctx: TRPC context object containing metadata
+        ctx: TRPC context object containing metadata; when it carries no app,
+            the app of the current process is returned.
 
     Returns:
         TrpcMcpServer: The MCP server instance
     """
+    if ctx is not None:
+        mcp_app = ctx.get_meta_data(MCP_APP)
+        if mcp_app is not None:
+            return mcp_app
     return get_mcp_app()
 
 
@@ -61,7 +70,7 @@ def get_http_req(ctx: TrpcContext) -> Request:
     Returns:
         Request: HTTP request object
     """
-    return ctx.get_meta_data(http_defines.HTTP_REQ_KEY)
+    return ctx.get_meta_data(HTTP_REQ_KEY)
 
 
 def get_http_rsp(ctx: TrpcContext) -> Response:
@@ -73,7 +82,7 @@ def get_http_rsp(ctx: TrpcContext) -> Response:
     Returns:
         Response: HTTP response object
     """
-    return ctx.get_meta_data(http_defines.HTTP_RSP_KEY)
+    return ctx.get_meta_data(HTTP_RSP_KEY)
 
 
 def get_server_addr(ctx: TrpcContext) -> str:
@@ -88,10 +97,10 @@ def get_server_addr(ctx: TrpcContext) -> str:
     Note:
         Falls back to request host if local address is not available.
     """
-    local_addr = ctx.get_meta_data(http_defines.LOCAL_ADDR)
+    local_addr = ctx.get_meta_data(LOCAL_ADDR)
     if not local_addr:
         req = get_http_req(ctx)
-        local_addr = req.host
+        local_addr = req.url.netloc
 
     return local_addr
 

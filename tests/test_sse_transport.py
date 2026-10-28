@@ -1,4 +1,8 @@
-# -*- coding: utf-8 -*-
+# Tencent is pleased to support the open source community by making tRPC-MCP-Python available.
+#
+# Copyright (C) 2026 Tencent. All rights reserved.
+#
+# tRPC-MCP-Python is licensed under Apache-2.0.
 """Tests for trpc_mcp._sse_transport."""
 
 import json
@@ -7,7 +11,7 @@ from uuid import uuid4
 
 import pytest
 from starlette.requests import Request
-from trpc.context import TrpcContext
+from trpc_sdk.abc import TrpcContext
 
 from trpc_mcp import _sse_transport
 from trpc_mcp._sse_transport import TrpcSseServerTransport
@@ -142,13 +146,13 @@ class TestContextSerialization:
 class TestSelectorOption:
 
     def test_no_options_returns_default(self):
-        transport = _make_transport(redis_conf={"target": "polaris://svc"})
+        transport = _make_transport(redis_conf={"target": "test://svc"})
         option = transport._parse_dict_to_selector_option(TrpcContext())
         assert option is not None
 
     def test_with_options(self):
         transport = _make_transport(redis_conf={
-            "target": "polaris://svc",
+            "target": "test://svc",
             "options": {
                 "namespace": "Production",
                 "metadata": {
@@ -182,14 +186,14 @@ class TestResolveRedisTarget:
         assert transport._redis_conf["host"] == "h"
 
     def test_resolves_target_to_host_port(self, monkeypatch):
-        transport = _make_transport(redis_conf={"target": "polaris://svc"})
+        transport = _make_transport(redis_conf={"target": "test://svc"})
         monkeypatch.setattr(_sse_transport, "get_selector", lambda scheme: _FakeSelector())
         run(transport._resolve_redis_target(TrpcContext()))
         assert transport._redis_conf["host"] == "10.0.0.5"
         assert transport._redis_conf["port"] == 6380
 
     def test_raises_when_node_none(self, monkeypatch):
-        transport = _make_transport(redis_conf={"target": "polaris://svc"})
+        transport = _make_transport(redis_conf={"target": "test://svc"})
         monkeypatch.setattr(_sse_transport, "get_selector", lambda scheme: _FakeSelector(node=None))
         with pytest.raises(ValueError):
             run(transport._resolve_redis_target(TrpcContext()))

@@ -1,6 +1,8 @@
-# -*- coding: utf-8 -*-
+# Tencent is pleased to support the open source community by making tRPC-MCP-Python available.
 #
-# Copyright @ 2025 Tencent.com
+# Copyright (C) 2026 Tencent. All rights reserved.
+#
+# tRPC-MCP-Python is licensed under Apache-2.0.
 """
 TRPC MCP Package Initialization Module
 
@@ -21,9 +23,12 @@ import logging
 
 from mcp.server import sse
 from mcp.server import websocket
-from trpc.log import logger as trpc_logger
 
 # Local imports
+# Imported for their import-time registrations: the http_mcp codecs/parsers/
+# client transport, and the protocol starter.
+from . import _codec  # noqa: F401  pylint: disable=unused-import
+from . import _trpc_server_transport  # noqa: F401  pylint: disable=unused-import
 
 from .mcp_api import get_http_req
 from .mcp_api import get_http_rsp
@@ -44,7 +49,6 @@ from .utils import set_http_kwargs_to_context
 from .utils import set_http_header_to_context
 from .version import __version__
 
-from ._codec import report_trpc_mcp_codec_plugin as _
 from ._config import get_mcp_client_config
 from ._config import register_set_settings_func
 from ._constants import MCP_STDIO
